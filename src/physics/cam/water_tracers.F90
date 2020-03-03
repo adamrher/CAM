@@ -58,7 +58,7 @@ module water_tracers
   use constituents,   only: pcnst
   use cam_abortutils, only: endrun
   use cam_logfile,    only: iulog
-  use water_isotopes, only: pwtspec, ispundef, isph2o, isphdo, isph218o
+  use water_isotopes, only: pwtspec, ispundef, isph2o, isphdo, isph218o, isph217o, isphto
   use water_types,    only: pwtype, iwtundef, iwtvap, iwtliq, iwtice, iwtstrain, iwtstsnow, iwtcvrain, iwtcvsnow
   use water_tracer_vars
 
@@ -120,6 +120,7 @@ module water_tracers
   public :: wtrc_mass_fixer       ! resets the Standard (H2O) tracer to Q, and adjusts others accordingly.
   public :: wtrc_equil_time       ! calculates the fraction of rain that has experienced equilibration
   public :: wtrc_chem_ch4ox_tend  ! methane oxidation tendency for water tracers/isotopes.
+  public :: wtrc_rad_decay        ! updates mass of water tracers/isotopes due to radioactive decay (only impacts HTO currently).
   public :: wtrc_eff_sat          ! calculates the "effective" relative humidity to use when calculating kinetic fractionation.
 !  public :: wtrc_rescale          ! scaler routine
 
@@ -337,7 +338,7 @@ end subroutine wtrc_init
 ! Purpose: register advected water tracer constituents
 !
 ! Method:
-!  Calls CAM constituent registration routines based on 
+!  Calls CAM constituent registration routines based on
 !  water tracer species and phase indexing. Create a number of tracer
 !  lists, and do some consistency checking of the tracers variables
 !
@@ -353,20 +354,29 @@ end subroutine wtrc_init
     use constituents,   only: cnst_name
     use physics_buffer, only: pbuf_add_field, dtype_r8, dyn_time_lvls
     use spmd_utils,     only: masterproc
-    use ppgrid,         only: pverp  
+    use ppgrid,         only: pverp
+    use pio,            only: file_desc_t, pio_inq_varid, PIO_BCAST_ERROR, PIO_NOERR
+    use pio,            only: pio_seterrorhandling
+    use cam_initfiles,  only: initial_file_get_id
 
     real(r8)             :: mw  ! molecular weight for the constituent
     real(r8)             :: cp  ! specific heat for the constituent
 
     integer              :: itmpndx, icnst, itag, iwset, pidx
 
-    character(len=128)     :: longname
+    character(len=128)   :: longname
 
-   !For wtrc_out_names -JN:
+    !For determining whether or not tracer is read from file:
+    type(file_desc_t), pointer :: fh_ini
+    integer                    :: err_handle
+    integer                    :: ierr
+    integer                    :: wtrc_fil_id
+    logical                    :: readiv_val
+
+    !For wtrc_out_names:
     character(len=8) :: wtstrng = "" !variable name
     integer          :: wtstsz       !name length
     integer          :: icount(pwtype)
-
 
 !-----------------------------------------------------------------------
 !
@@ -376,10 +386,16 @@ end subroutine wtrc_init
     iwspec(:)  = ispundef
     iwistag(:) = .false.
 
-  ! Set the species of the total water as H2O, but DONT set them
-  ! as water tracers, as they are prognostic (not "tracers")
-  !
-  ! Set names of variable tendencies and declare them as history variables
+    ! Set initial conditions file pointer:
+    fh_ini  => initial_file_get_id()
+
+    ! Set PIO error-handling so that a PIO erro doesn't end the model simulation:
+    call pio_seterrorhandling(fh_ini, PIO_BCAST_ERROR, err_handle)
+
+    ! Set the species of the total water as H2O, but DONT set them
+    ! as water tracers, as they are prognostic (not "tracers")
+    !
+    ! Set names of variable tendencies and declare them as history variables
     if (water_tracer_model /= "none") then
 
       if ( masterproc ) then
@@ -481,9 +497,17 @@ end subroutine wtrc_init
           longname = trim(longname) // ' (tagged)'
         end if
 
+        ! Check if tracer is present on initial conditions file:
+        ierr = pio_inq_varid(fh_ini, wtrc_names(icnst), wtrc_fil_id)
+        if (ierr == PIO_NOERR) then
+            readiv_val = .true.
+        else
+            readiv_val = .false.
+        end if
+
         ! Register the water isotope tracer.
         call wtrc_cnst_add(wtrc_names(icnst), wtrc_types(icnst), wtrc_species(icnst), &
-          wtrc_is_tag(icnst), mw, cp, 0._r8, wtrc_indices(icnst), longname, readiv=.false.)
+          wtrc_is_tag(icnst), mw, cp, 0._r8, wtrc_indices(icnst), longname, readiv=readiv_val)
 
         ! Make some indices and counts to make it easier to loop over the isotopes.
         icount(wtrc_types(icnst)) = icount(wtrc_types(icnst))+1
@@ -504,7 +528,10 @@ end subroutine wtrc_init
         end if
       end do
 
-      ! Determine which specifies are coupled to the surface.      
+      ! Set PIO error-handling back to its original value:
+      call pio_seterrorhandling(fh_ini, err_handle)
+
+      ! Determine which specifies are coupled to the surface.
       icnst = 1
       do while(wtrc_srfvap_names(icnst) /= "")
         wtrc_iasrfvap(icnst) = wtrc_get_icnst(wtrc_srfvap_names(icnst))
@@ -532,7 +559,7 @@ end subroutine wtrc_init
       end do
       wtrc_nsrfpcp = icnst-1
 
-      ! Add 2D surface precipitation variables in the physics buffer for each of the 
+      ! Add 2D surface precipitation variables in the physics buffer for each of the
       ! precipitation types and wsets.
       wtrc_srfpcp_indices(:,:) = -1
 
@@ -1016,7 +1043,7 @@ end subroutine wtrc_register
 ! set to 1.  Thus if looping is turned on, and the values become substantially
 ! worse, then the adjust_H2O subroutines might need to be reinstated. - JN
 ! NOTE:  Adding addtional iterations appeared to make no difference.  Still,
-! the adjust_H2O routine calls will remain just in case, at least until the code is 
+! the adjust_H2O routine calls will remain just in case, at least until the code is
 ! cleaned-up. - JN
 !
 ! NOTE: The subroutine here makes the assumption that the tendency rates are a
@@ -1036,7 +1063,7 @@ end subroutine wtrc_register
 !-----------------------------------------------------------------------
   use physics_types,  only: physics_state, physics_ptend, physics_ptend_init, &
                             physics_ptend_sum, physics_ptend_reset
-  use water_isotopes, only: pwtspec
+  use water_isotopes, only: pwtspec, difrm
   use water_types,    only: pwtype
   use constituents,   only: cnst_name, pcnst
   use physconst,      only: cpair,gravit,rhoh2o
@@ -1053,17 +1080,17 @@ end subroutine wtrc_register
   real(r8), intent(in), optional     :: post_rates(pcols,pver,pwtype,pwtype,pwtype) ! Post sedimentation process rates (kg/kg/sec)
 
   logical, intent(in), optional      :: do_stprecip
- 
+
   !Needed for wtrc_sediment:
   real(r8), intent(in), optional     :: liqcldf(pcols,pver) !liquid cloud fraction
   real(r8), intent(in), optional     :: icecldf(pcols,pver) !ice cloud fraction
   real(r8), intent(in), optional     :: fc(pcols,pver)      !initial fall velocity of cloud liquid
-  real(r8), intent(in), optional     :: fi(pcols,pver)      !initial fall velocity of cloud ice       
+  real(r8), intent(in), optional     :: fi(pcols,pver)      !initial fall velocity of cloud ice
 
   !latent heating terms:
   real(r8), intent(in), optional     :: prelat(pcols,pver)  !latent heating due to pre-rates
   real(r8), intent(in), optional     :: postlat(pcols,pver) !latent heating due to post-rates
-  
+
   !precipitation phase changes:
   real(r8), intent(in), optional     :: frzro(pcols,pver)   !fraction of rain that freezes
   real(r8), intent(in), optional     :: meltso(pcols,pver)  !fraction of snow that melts
@@ -1081,7 +1108,7 @@ end subroutine wtrc_register
   integer            :: msrc
   integer            :: isrctype
   integer            :: idsttype
-  integer            :: rtype 
+  integer            :: rtype
   integer            :: mdst
   integer            :: ispec
   logical            :: isOk
@@ -1097,7 +1124,7 @@ end subroutine wtrc_register
   real(r8)           :: rmass(pcols,wtrc_nwset)  !Vertically-integrated rain
   real(r8)           :: smass(pcols,wtrc_nwset)  !Vertically-integrated snow
   real(r8)           :: rmass0(pcols,wtrc_nwset) !copy of rain
-  real(r8)           :: smass0(pcols,wtrc_nwset) !copy of snow 
+  real(r8)           :: smass0(pcols,wtrc_nwset) !copy of snow
 
   real(r8)           :: diff(pcols,pver,pwtype)  !Numerical precision fixer
   real(r8)           :: pdiff                    !precipitation numerical fixer
@@ -1108,24 +1135,23 @@ end subroutine wtrc_register
   real(r8)           :: irtmp
 
   real(r8)           :: dz                       !layer thickness in meters
- 
+
  !For partial rain equilibration:
-  real(r8)           :: difrm(pwtspec) !should be read from water_isotopes.F90
   real(r8)           :: radius         !raindrop radius in meters
   real(r8)           :: fequil         !fraction of rain that is equilibrated.
- 
+
 
 !-----------------------------------------------------------------------
 !
 
   if (trace_water) then
-  
+
     if (present(do_stprecip)) then
       ldo_stprecip = do_stprecip
     else
       ldo_stprecip = .false.
     end if
-    
+
     ncol = pstate%ncol
 
     !Copy initial state:
@@ -1138,12 +1164,12 @@ end subroutine wtrc_register
       call wtrc_clear_precip(pstate, pbuf, iwtstrain)
       call wtrc_clear_precip(pstate, pbuf, iwtstsnow)
      !Initialize precipitation integrals:
-      rmass(:,:)  = 0._r8 
+      rmass(:,:)  = 0._r8
       smass(:,:)  = 0._r8
       rmass0(:,:) = 0._r8
       smass0(:,:) = 0._r8
     end if
-    
+
     ! Check to see if the total water mass in the bulk fields matches the
     ! water traces. For the h216o model, this indicates that bulk fields are
     ! out of sync with the isotopes, indicating that some water process was
@@ -1153,7 +1179,7 @@ end subroutine wtrc_register
     ! Iterate over each of the isotopologues and calculate tendencies
     ! based upon the sedimentation rates from the bulk prognostic species.
 
-      !***************************     
+      !***************************
       !Pre-sedimentation processes
       !***************************
       if(present(pre_rates)) then
@@ -1179,21 +1205,21 @@ end subroutine wtrc_register
                       if(isrctype .gt. iwtice) then !Is precipitation the source?
                        !calculate ratio:
                         if(isrctype .eq. iwtstrain) then !rain
-                          R = wtrc_ratio(iwspec(msrc),rmass0(i,iwset),rmass0(i,1)) 
+                          R = wtrc_ratio(iwspec(msrc),rmass0(i,iwset),rmass0(i,1))
                         else !snow
                           R = wtrc_ratio(iwspec(msrc),smass0(i,iwset),smass0(i,1))
-                        end if 
+                        end if
                       else
                         R = wtrc_ratio(iwspec(msrc),qloc0(i,k,msrc),qloc0(i,k,mbase)) !calculate ratio for single level
                       end if
 
                       if(wisotope .and. (iwset .ne. 1) .and. (isrctype .eq. iwtvap) .and. &
-                         ((idsttype .eq. iwtice) .or. (idsttype .eq. iwtstsnow))) then 
+                         ((idsttype .eq. iwtice) .or. (idsttype .eq. iwtstsnow))) then
                         !only do Rayleigh distillation for water isotopes.
 
                         ispec = iwspec(mdst) !determine isotope species of ice or snow (and thus vapoor)
 
-                        ! For Si_real^avg use average humidity for the calculation of alpha 
+                        ! For Si_real^avg use average humidity for the calculation of alpha
                         !during ice/snow deposition in the subroutine wtrc_apply_rates:
                         alpha = wtrc_get_alpha((qloc0(i,k,wtrc_iawset(iwtvap,WTRC_WSET_STD))+qloc(i,k,wtrc_iawset(iwtvap,WTRC_WSET_STD)))/2._r8, &
                                                 tloc(i,k), ispec, isrctype, idsttype, .true., pstate%pmid(i,k))
@@ -1203,18 +1229,18 @@ end subroutine wtrc_register
 !                                               .true., pstate%pmid(i,k))
 
                         !calculate change in vapor mass:
-                        fr = qloc(i,k,mbase)/qloc0(i,k,mbase) 
+                        fr = qloc(i,k,mbase)/qloc0(i,k,mbase)
                         !Constrain ratio fraction:
                         fr = min(1._r8,max(0._r8,fr))
 
                         qloc(i,k,msrc) = qloc0(i,k,msrc)*(fr**alpha)
                         if(idsttype .eq. iwtstsnow) then !snow?
-                          smass(i,iwset) = smass(i,iwset) + (qloc0(i,k,msrc)-qloc(i,k,msrc))*pstate%pdel(i,k) 
+                          smass(i,iwset) = smass(i,iwset) + (qloc0(i,k,msrc)-qloc(i,k,msrc))*pstate%pdel(i,k)
                         else !ice?
                           qloc(i,k,mdst) = qloc(i,k,mdst) + (qloc0(i,k,msrc)-qloc(i,k,msrc))
                         end if
 
-                      else if(((isrctype .eq. iwtliq) .or. (isrctype .eq. iwtice)) .and. (isrctype .eq. idsttype)) then 
+                      else if(((isrctype .eq. iwtliq) .or. (isrctype .eq. iwtice)) .and. (isrctype .eq. idsttype)) then
                         !Apply Bergeron process to ice:
                         !-----------------------------
                         if(isrctype .eq. iwtliq) then !liquid type used for Bergeron to ice
@@ -1228,10 +1254,10 @@ end subroutine wtrc_register
                         end if
                         if(wisotope .and. (iwset .gt. 1)) then !Are you doing water isotopes?
                           !Fractionation variables:
-                          ispec = iwspec(wtrc_iawset(iwtice,iwset)) 
-                   
+                          ispec = iwspec(wtrc_iawset(iwtice,iwset))
+
                          !cloud ice and snow use the same fractionation factors, so just use ice:
-  
+
                          ! For Si_real^avg use average humidity for the calculation of alpha
                          !during ice/snow deposition in the subroutine wtrc_apply_rates:
                          alpha = wtrc_get_alpha((qloc0(i,k,wtrc_iawset(iwtvap,WTRC_WSET_STD))+&
@@ -1265,7 +1291,7 @@ end subroutine wtrc_register
                           else !ice
                             qloc(i,k,mdst) = qloc(i,k,mdst) + (qloc0(i,k,wtrc_iawset(iwtvap,iwset))-&
                                 qloc(i,k,wtrc_iawset(iwtvap,iwset)))
-                          end if            
+                          end if
                         else
                           !liquid directly to ice:
                           if(mdst .eq. wtrc_iawset(iwtstsnow,iwset)) then !snow?
@@ -1306,7 +1332,7 @@ end subroutine wtrc_register
                                            pstate%pdel(i,k))/wtrc_niter
                         else !not precip?
                           qloc(i,k,mdst) = qloc(i,k,mdst)+alpha*R*pre_rates(i,k,idsttype,isrctype,rtype)*dtime/wtrc_niter
-                        end if 
+                        end if
                         !Subtract tendency from source:
                         if(isrctype .ne. idsttype) then
                           if(isrctype .eq. iwtstrain) then !rain?
@@ -1350,7 +1376,7 @@ end subroutine wtrc_register
                 !---------------------------------
               end do !isrctype
               !--------------------------------------------
-              !Calculate precipitation melting and freezing 
+              !Calculate precipitation melting and freezing
               !--------------------------------------------
               if(ldo_stprecip) then !only do in microphysics
                 do iwset = 1,wtrc_nwset
@@ -1370,14 +1396,14 @@ end subroutine wtrc_register
               !---------------------------------
               !Equilibrate Rain below Clouds/LCL
               !---------------------------------
-              if(ldo_stprecip) then !only do precipitation 
+              if(ldo_stprecip) then !only do precipitation
                 do iwset = 1,wtrc_nwset
                   if(wisotope .and. (iwset .ne. 1)) then
-                     
+
                     !NOTE:  0.0001 (1.e-4) appears to be the cutoff in MG1, such that
                     !any cloud fraction value equal to or below that number is assumed to be clear sky. - JN
 
-                    if((rmass(i,iwset) .gt. 0._r8) .and. ((icecldf(i,k) + liqcldf(i,k)) .le. 1.e-4_r8)) then 
+                    if((rmass(i,iwset) .gt. 0._r8) .and. ((icecldf(i,k) + liqcldf(i,k)) .le. 1.e-4_r8)) then
                      !rain exists but no clouds (i.e. below cloud base)
 
                      !determine isotope species:
@@ -1390,9 +1416,6 @@ end subroutine wtrc_register
                       alpha = wtrc_get_alpha(qloc0(i,k,wtrc_iatype(1,iwtvap)), tloc(i,k), &
                                              iwspec(wtrc_iatype(iwset,iwtvap)), &
                                              iwtvap, iwtliq, .false.,1._r8,.false.)
-
-                     !set molecular diffusion ratios:
-                      difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct from paper)
 
                       if (rmass(i,1) .gt. 0._r8) then
                          !calculate raindrop radius based off rain rate:
@@ -1413,14 +1436,12 @@ end subroutine wtrc_register
                       end if
 
                      !make copies of water mass quantities (to avoid changes from wtrc_liqvap_equil call):
-                      qtmp = qloc(i,k,wtrc_iatype(1,iwtvap)) * pstate%pdel(i,k) 
+                      qtmp = qloc(i,k,wtrc_iatype(1,iwtvap)) * pstate%pdel(i,k)
                       itmp = qloc(i,k,wtrc_iatype(iwset,iwtvap)) * pstate%pdel(i,k)
-                      rtmp = rmass(i,1) 
+                      rtmp = rmass(i,1)
                       irtmp= rmass(i,iwset)
 
-                      !call wtrc_liqvap_equil(alpha, 1._r8, qtmp, rtmp,&
-                      !                       itmp, irtmp, dliqiso) 
-
+                      !perform isotopic equilibration:
                       call wtrc_liqvap_equil(alpha, fequil, qtmp, rtmp,&
                                              itmp, irtmp, dliqiso)
 
@@ -1429,9 +1450,9 @@ end subroutine wtrc_register
                                                             (dliqiso / pstate%pdel(i,k))
                      !rain:
                       rmass(i,iwset) = rmass(i,iwset) + dliqiso
-               
+
                     end if !cloud base
-                    
+
                   end if
                 end do
                 qloc0(i,k,:) = qloc(i,k,:) !update state
@@ -1448,7 +1469,7 @@ end subroutine wtrc_register
                 do iwset=2,wtrc_nwset         !don't loop over H2O
                   R = wtrc_ratio(iwspec(wtrc_iawset(iwtstrain,iwset)),rmass0(i,iwset),rmass0(i,2)) !use H216O as denominator
                   rmass(i,iwset) = rmass(i,iwset) - R*pdiff                !adjust rain mass
-                  mdst = wtrc_iawset(iwtvap,iwset)                         !assume extra mass goes to vapor 
+                  mdst = wtrc_iawset(iwtvap,iwset)                         !assume extra mass goes to vapor
                                                                            !(largest atmospheric reservoir)
                   qloc(i,k,mdst) = qloc(i,k,mdst)+R*pdiff/pstate%pdel(i,k) !add mass to vapor
                 end do
@@ -1457,7 +1478,7 @@ end subroutine wtrc_register
                 do iwset=2,wtrc_nwset         !don't loop over H2O
                   R = wtrc_ratio(iwspec(wtrc_iawset(iwtstrain,iwset)),smass0(i,iwset),smass0(i,2)) !use H216O as denominator
                   smass(i,iwset) = smass(i,iwset) - R*pdiff                  !adjust rain mass
-                  mdst = wtrc_iawset(iwtvap,iwset)                           !assume extra mass goes to vapor 
+                  mdst = wtrc_iawset(iwtvap,iwset)                           !assume extra mass goes to vapor
                                                                              ! (largest atmospheric reservoir)
                   qloc(i,k,mdst) = qloc(i,k,mdst)+R*pdiff/pstate%pdel(i,k)   !add mass to vapor
                 end do
@@ -1468,7 +1489,7 @@ end subroutine wtrc_register
               !------------------
               !update temperature
               !------------------
-              !NOTE ON TEMPERATURE CHANGE: 
+              !NOTE ON TEMPERATURE CHANGE:
               !Arguably, the most physically realistic method of temperature integration would
               !be to loop over all processes each time the temperature is changed, as this would better
               !reflect the fact that in reality, all of these processes are occuring at once.  However,
@@ -1482,8 +1503,8 @@ end subroutine wtrc_register
               !NOTE: Temperature currently calculated as an average value over the entire parameterization time period. - JN
 !              tloc(i,k) = tloc(i,k) + prelat(i,k)/cpair*dtime/wtrc_niter
               !NOTE: This temperature call simply updates the temperature to its value after pre-rate effects.
-               tloc(i,k) = pstate%t(i,k) + prelat(i,k)/cpair*dtime/wtrc_niter        
-              !------------------  
+               tloc(i,k) = pstate%t(i,k) + prelat(i,k)/cpair*dtime/wtrc_niter
+              !------------------
             end do!atmospheric columns (i)
           end do   !atmospheric levels (k)
         end do !iter
@@ -1495,12 +1516,12 @@ end subroutine wtrc_register
      if (present(sed_rates)) then
        call wtrc_sediment_mg1(wtrc_niter,ncol,pstate%lchnk,top_lev,dtime,fc,fi,liqcldf,icecldf,pstate%pdel,pbuf,tloc,qloc)
      end if
-  
+
      qloc0(:ncol,top_lev:,:) = qloc(:ncol,top_lev:,:) !reset control quantity
 
      !****************************
      !Post-Sedimentation Processes
-     !**************************** 
+     !****************************
       if (present(post_rates)) then
         !Do this top down, like is done in MG microphysics.
         do iter=1,wtrc_niter !temperature iterator
@@ -1528,7 +1549,7 @@ end subroutine wtrc_register
                         !NOTE:  This section is currently never called. - JN
                         if(k .gt. 1) then !don't do for top level
                           if(sum(qloc0(i,1:k,mbase)*pstate%pdel(i,1:k)) .gt. 0._r8) then  !prevent NaNs
-                            R = sum(qloc0(i,1:k,msrc)*pstate%pdel(i,1:k))/sum(qloc0(i,1:k,mbase)*pstate%pdel(i,1:k)) 
+                            R = sum(qloc0(i,1:k,msrc)*pstate%pdel(i,1:k))/sum(qloc0(i,1:k,mbase)*pstate%pdel(i,1:k))
                             !calculate integral ratio
                           else
                             R = wtrc_ratio(iwspec(msrc), qloc0(i,k,msrc),qloc0(i,k,mbase)) !just do for single level
@@ -1536,13 +1557,13 @@ end subroutine wtrc_register
                         else
                           R = wtrc_ratio(iwspec(msrc), qloc0(i,k,msrc),qloc0(i,k,mbase)) !calculate for single level
                         end if
-                        !----------------------      
+                        !----------------------
                       else
                         R = wtrc_ratio(iwspec(msrc),qloc0(i,k,msrc),qloc0(i,k,mbase)) !calculate ratio for single level
                       end if
 
                       if(wisotope .and. (iwset .ne. 1) .and. (isrctype .eq. iwtvap) .and. &
-                         ((idsttype .eq. iwtice) .or. (idsttype .eq. iwtstsnow))) then 
+                         ((idsttype .eq. iwtice) .or. (idsttype .eq. iwtstsnow))) then
                         !only do Rayleigh distillation on water isotopes.
 
 
@@ -1552,12 +1573,7 @@ end subroutine wtrc_register
                         !during ice/snow deposition in the subroutine wtrc_apply_rates:
                         alpha = wtrc_get_alpha((qloc0(i,k,wtrc_iawset(iwtvap,WTRC_WSET_STD))+&
                                                 qloc(i,k,wtrc_iawset(iwtvap,WTRC_WSET_STD)))/2._r8, &
-                                                tloc(i,k), ispec, isrctype, idsttype, .true., pstate%pmid(i,k)) 
-
-
-!                        alpha = wtrc_get_alpha(qloc0(i,k,wtrc_iawset(iwtvap,WTRC_WSET_STD)), &
-!                                               tloc(i,k), ispec, isrctype, idsttype,         &
-!                                               .true., pstate%pmid(i,k))
+                                                tloc(i,k), ispec, isrctype, idsttype, .true., pstate%pmid(i,k))
 
                         !calculate change in vapor mass:
                         fr = qloc(i,k,mbase)/qloc0(i,k,mbase)
@@ -1607,7 +1623,7 @@ end subroutine wtrc_register
               !update temperature
               !------------------
               !NOTE: Temperature currently calculated as an average value over the entire parameterization time period. - JN
-              !tloc(i,k) = tloc(i,k) + postlat(i,k)/cpair*dtime/wtrc_niter 
+              !tloc(i,k) = tloc(i,k) + postlat(i,k)/cpair*dtime/wtrc_niter
               !NOTE: This temperature call simply updates the temperature to its value after pre-rate effects.
               tloc(i,k) = pstate%t(i,k) + (prelat(i,k)+postlat(i,k))/cpair*dtime/wtrc_niter
               !------------------
@@ -1640,14 +1656,14 @@ end subroutine wtrc_register
 
         ! Eliminate negative mixing ratios.
         ! NOTE: Use 0 as a threshold rather than wtrc_qmin during the substepping.
-!        call wtrc_adjust_h2o("WTRC_APPLY_RATES(" // trim(ptend_sum%name) // ")", iwset, ncol, top_lev, qloc, qmin=0._r8) 
+!        call wtrc_adjust_h2o("WTRC_APPLY_RATES(" // trim(ptend_sum%name) // ")", iwset, ncol, top_lev, qloc, qmin=0._r8)
 !      end do
-  
+
       do idsttype = 1, pwtype
         qloc(:ncol, top_lev:, wtrc_bulk_indices(idsttype)) = qloc(:ncol, top_lev:, wtrc_bulk_indices(idsttype)) + &
-          ptend_sum%q(:ncol, top_lev:, wtrc_bulk_indices(idsttype)) * dtime 
-          
-!        call wtrc_adjust_h2o_bulk("WTRC_APPLY_RATES(" // trim(ptend_sum%name) // ")", ncol, top_lev, qloc) 
+          ptend_sum%q(:ncol, top_lev:, wtrc_bulk_indices(idsttype)) * dtime
+
+!        call wtrc_adjust_h2o_bulk("WTRC_APPLY_RATES(" // trim(ptend_sum%name) // ")", ncol, top_lev, qloc)
       end do
 
     ! Now that we have the final state, apply q limits like those used by the
@@ -1657,9 +1673,9 @@ end subroutine wtrc_register
     ! physics_update may use different limits. It would be nice if all
     ! parameterizations used cnst_qmin.
 !    do iwset = 1, wtrc_nwset
-!      call wtrc_adjust_h2o("WTRC_APPLY_RATES(" // trim(ptend_sum%name) // ")", iwset, ncol, top_lev, qloc) 
+!      call wtrc_adjust_h2o("WTRC_APPLY_RATES(" // trim(ptend_sum%name) // ")", iwset, ncol, top_lev, qloc)
 !    end do
-      
+
     ! Sedimentation of cloud liquid and cloud ice is stratiform precipitation.
     ! out of the bottom layer is precipitation.
     !
@@ -1690,13 +1706,13 @@ end subroutine wtrc_register
     do i=1,ncol
       do k=top_lev,pver
         do icnst = 1, wtrc_ncnst
-         
+
           !Allow for tendency to change state:
-!          ptend_sum%lq(wtrc_indices(icnst)) = .true. 
+!          ptend_sum%lq(wtrc_indices(icnst)) = .true.
 
           !Calculate state:
           ptend_sum%q(i,k,wtrc_indices(icnst)) = (qloc(i,k,wtrc_indices(icnst)) - pstate%q(i,k,wtrc_indices(icnst))) / dtime
- 
+
           if(icnst .le. pwtype) then !H2O only
             diff(i,k,icnst) = ptend_sum%q(i,k,wtrc_indices(icnst))-(ptend_sum%q(i,k,wtrc_bulk_indices(icnst)))
           end if
@@ -1729,18 +1745,18 @@ end subroutine wtrc_register
 
           if(m .eq. 1) then !is it the standard water tracer?
             qtmp = ptend_sum%q(i,k,wtrc_iatype(m,icnst))
-          end if  
+          end if
 
           !calculate water tracer ratio:
           R = wtrc_ratio(iwspec(wtrc_iatype(m,icnst)),ptend_sum%q(i,k,wtrc_iatype(m,icnst)),qtmp)
 
-          ptend_sum%q(i,k,wtrc_iatype(m,icnst)) = ptend_sum%q(i,k,wtrc_iatype(m,icnst))-R*diff(i,k,icnst) 
+          ptend_sum%q(i,k,wtrc_iatype(m,icnst)) = ptend_sum%q(i,k,wtrc_iatype(m,icnst))-R*diff(i,k,icnst)
 
         end do
       end do
     end do
   end do
- 
+
 !Apply correction again (I don't know why this is needed, but for some reason it is, as apparently the fix above produces
 !another numerical error for cloud liquid - JN)
   do i=1,ncol
@@ -1788,13 +1804,13 @@ end subroutine wtrc_register
    ! isOk = wtrc_check_h2o("WTRC_APPLY_RATES(POST-" // trim(ptend_sum%name) // ")", pstate, qloc, dtime, ptend=ptend_sum)
 
 end if !tracer_water
-  
+
   return
 end subroutine wtrc_apply_rates_mg1
 
 !=======================================================================
 subroutine wtrc_mg_inter(state, ptend, pbuf, precr, preci, top_lev, dtime, alst_mic, &
-                         aist_mic, cmeiout,      &    
+                         aist_mic, cmeiout,      &
                          preo, prdso, mnuccco, mnuccto, msacwio,           &
                          prao, prco, psacwso, bergo, bergso, praio, prcio, &
                          pracso, mnuccro, qcreso, qireso,                  &
@@ -2096,11 +2112,11 @@ end subroutine wtrc_mg_inter
 
 !**************
 !Use Statements
-!************** 
+!**************
 
   use physics_types,  only: physics_state, physics_ptend, physics_ptend_init, &
                             physics_ptend_sum, physics_ptend_reset
-  use water_isotopes, only: pwtspec
+  use water_isotopes, only: pwtspec, difrm
   use water_types,    only: pwtype
   use constituents,   only: cnst_name, pcnst
   use physconst,      only: cpair,gravit,rhoh2o
@@ -2180,7 +2196,6 @@ end subroutine wtrc_mg_inter
   real(r8)           :: dz                       !layer thickness in meters
 
  !For partial rain equilibration:
-  real(r8)           :: difrm(pwtspec) !should be read from water_isotopes.F90
   real(r8)           :: radius         !raindrop radius in meters
   real(r8)           :: fequil         !fraction of rain that is equilibrated.
 
@@ -3138,6 +3153,7 @@ use physconst,      only: gravit, cpair, latvap, latice
 use physics_buffer, only: physics_buffer_desc, pbuf_get_index, pbuf_get_field
 use constituents,   only: cnst_name
 use ppgrid,         only: pverp
+use water_isotopes, only: difrm
 
 !*****************
 !Declare variables
@@ -3181,7 +3197,7 @@ real(r8) :: faltndqie                !change in ice due to sedimentation (no-eva
 real(r8) :: faltndc                  !change in liquid due to sedimentation
 real(r8) :: faltndi                  !change in ice due to sedimentation
 real(r8) :: faltndr                  !change in rain due to sedimentation
-real(r8) :: faltnds                  !change in snow due to sedimentation  
+real(r8) :: faltnds                  !change in snow due to sedimentation
 real(r8) :: fc(pver)                 !cloud liquid fall velocity
 real(r8) :: fi(pver)                 !cloud ice fall velocity
 real(r8) :: fr(pver)                 !stratiform rain fall velocity
@@ -3200,40 +3216,12 @@ real(r8) :: ttmp(pcols,pver)         !temporary air temperature (used for equili
 real(r8) :: tloc0(pcols,pver)        !copy of air temperature
 
 !For partial rain equilibration:
-integer  :: ispec                    !water isotope species       
+integer  :: ispec                    !water isotope species
 real(r8) :: dz                       !layer thickness in meters
 real(r8) :: radius                   !raindrop radius in meters
 real(r8) :: fequil                   !fraction of rain that is equilibrated.
-real(r8) :: difrm(pwtspec)           !should be read from water_isotopes.F90
 
 real(r8), parameter :: mincld = 0.0001_r8 !minimum cloud fraction (unitless)
-
-!DEBUGGING:
-!---------
-!real(r8), pointer :: prec_pcw(:)
-!real(r8), pointer :: snow_pcw(:)
-!real(r8), pointer :: prec_sed(:)
-!real(r8), pointer :: snow_sed(:)
-!integer :: prec_pcw_idx
-!integer :: snow_pcw_idx
-!integer :: prec_sed_idx
-!integer :: snow_sed_idx
-
-!prec_pcw_idx = -1 !initalize
-!snow_pcw_idx = -1
-!prec_sed_idx = -1
-!snow_sed_idx = -1
-
-!prec_pcw_idx = pbuf_get_index('PREC_PCW')
-!snow_pcw_idx = pbuf_get_index('SNOW_PCW')
-!prec_sed_idx = pbuf_get_index('PREC_SED')
-!snow_sed_idx = pbuf_get_index('SNOW_SED')
-
-!call pbuf_get_field(pbuf, prec_pcw_idx,  prec_pcw)
-!call pbuf_get_field(pbuf, snow_pcw_idx,  snow_pcw)
-!call pbuf_get_field(pbuf, prec_sed_idx,  prec_sed)
-!call pbuf_get_field(pbuf, snow_sed_idx,  snow_sed)
-!---------
 
 !*******************
 !Initalize variables
@@ -3533,7 +3521,7 @@ do i=1,ncol   !loop over columns
         !Calculate partial equilibration of rain
         !---------------------------------------
         !NOTE:  Currently only applied to rain falling through clear-sky,
-        !in order to match iCAM5.  However, in reality this should occur 
+        !in order to match iCAM5.  However, in reality this should occur
         !for any sky conditions, so if the isotope values are incorrect,
         !this could be the reason why. -JN
         if(wisotope) then
@@ -3550,9 +3538,6 @@ do i=1,ncol   !loop over columns
               !set fractionation factor
               alpha = wtrc_get_alpha(qloc(i,k,wtrc_iatype(1,iwtvap)), tloc0(i,k), ispec, &
                                            iwtvap, iwtliq, .false.,1._r8,.false.)
-
-              !set molecular diffusion ratios:
-              difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct from paper)
 
               if(qloc(i,k,wtrc_iatype(1,iwtstrain)) .gt. 0._r8) then
                 !calculate raindrop radius based off rain rate:
@@ -3713,6 +3698,7 @@ subroutine stewart_isoevap(ispec, Rr0, rmass0, rmass, irmass0, vmass0, vmass, &
 !use wv_saturation,  only: qsat_water
 use wv_saturation,  only: qsat
 use physconst,      only: gravit
+use water_isotopes, only: difrm, dkfac
 
 !********************
 !Variable declaration
@@ -3758,10 +3744,6 @@ real(r8) :: heff    !local "effective" relative humidity
 real(r8) :: radius  !average radius of raindrop [m] 
 real(r8) :: fequil  !fraction of rain the experiences stewart/equilibration
 
-!For kinetic fractionation:
-real(r8) :: difrm(pwtspec)
-real(r8) :: dkfac
-
 !*****************
 !Tuning parameters
 !*****************
@@ -3772,13 +3754,6 @@ phi = 0.9_r8
 !Assumed raindrop radius (in meters):
 !NOTE:  Now calculated based off rain rate -JN
 !radius = 0.00035_r8
-
-!*****************************
-!Diffusivity ratios and powers (should be called from water_isotopes.F90 eventually):
-!*****************************
-
-difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct from paper)
-dkfac = 0.58_r8                                          ! From Stewart, 1975?
 
 !***************************
 !Calculate relative humidity
@@ -5241,7 +5216,7 @@ subroutine wtrc_precip_evap(state,rprd,deltat,evpbulk,subbulk,dqdt,prec,snow)
 !
 !Purpose:  To calculate the influence of
 !precipitation phase changes (evaporation,
-!sublimation, melting, and freezing) on water 
+!sublimation, melting, and freezing) on water
 !tracers and water isotopes.
 !
 !Written by:  Jesse Nusbaumer <nusbaume@colorado.edu> - April 2012
@@ -5256,9 +5231,10 @@ use physconst,             only: gravit, tmelt
 use cloud_fraction,        only: cldfrc_fice
 use wv_saturation,         only: qsat
 use water_types,           only: iwtvap
+use water_isotopes,        only: difrm, dkfac
 
 !*****************
-!Declare variables 
+!Declare variables
 !*****************
 
 implicit none
@@ -5320,12 +5296,6 @@ real(r8) :: gam,bet              !Stewart equation parameters
 real(r8) :: fr                   !Fraction of precip remaining after rain evaporation
 real(r8) :: Rstw                 !precipitation ratio after application of Stewart equation
 
-!These next two variables are present in water_isotopes.F90, and thus
-!ideally should be pulled from there. - JN
-
-real(r8)  :: difrm(pwtspec)     !Diffusivity ratio array
-real(r8)  :: dkfac              !Diffusivity power law factor
-
 !For partial equilibration calculation:
 integer     :: ispec                    !water isotope species
 real(r8)    :: dz(pcols,pver)           !layer thickness in height
@@ -5340,8 +5310,8 @@ integer :: ncol               !Number of atmospheric columns
 integer :: i,k,m              !loop variables
 
 !For precip mass fixer:
-real(r8) :: pdiff 
-real(r8) :: sdiff 
+real(r8) :: pdiff
+real(r8) :: sdiff
 real(r8) :: pmass0
 real(r8) :: smass0
 real(r8) :: Rd
@@ -5374,10 +5344,6 @@ call qsat(state%t(1:ncol, 1:pver), state%pmid(1:ncol, 1:pver), &
 
 !calculate relative humidity:
 rh(:ncol,:) = state%q(:ncol,:,1)/qst(:ncol,:)
-
-!Diffusivity ratios and powers (should be called from water_isotopes.F90 eventually):
-difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct from paper)
-dkfac = 0.58_r8                                          ! From Stewart, 1975?
 
 !phi value given in Bony et. al., 2008:
 phi = 0.9_r8
@@ -5640,10 +5606,10 @@ do i=1,ncol
   do m=2,wtrc_nwset
    !Total precip errors:
     Rd = wtrc_ratio(iwspec(wtrc_iatype(m,iwtvap)),prec(i,wtrc_iatype(m,iwtvap)),pmass0)
-    prec(i,wtrc_iatype(m,iwtvap)) = max(0._r8,prec(i,wtrc_iatype(m,iwtvap))-Rd*pdiff)    
+    prec(i,wtrc_iatype(m,iwtvap)) = max(0._r8,prec(i,wtrc_iatype(m,iwtvap))-Rd*pdiff)
    !Snow errors:
     Rd = wtrc_ratio(iwspec(wtrc_iatype(m,iwtvap)),snow(i,wtrc_iatype(m,iwtvap)),smass0)
-    snow(i,wtrc_iatype(m,iwtvap)) = max(0._r8,snow(i,wtrc_iatype(m,iwtvap))-Rd*sdiff)           
+    snow(i,wtrc_iatype(m,iwtvap)) = max(0._r8,snow(i,wtrc_iatype(m,iwtvap))-Rd*sdiff)
    !Giant error check: 
    !NOTE:  !Seems to occur baout once every seven years. -JN
     if(prec(i,wtrc_iatype(m,iwtvap)) .gt. 10._r8*prec(i,wtrc_iatype(1,iwtvap))) then
@@ -5797,7 +5763,7 @@ use wv_saturation, only: qsat
 !  tadjust = (rdrop*rdrop)*rhoh2o*rh2o*temp/(3._r8*fvent*difa*esat)
 
 !
-! Compute the exposure time as the time falling throught this layer
+! Compute the exposure time as the time falling through this layer
 !
   texposure = zdel/vterm
 
@@ -5864,12 +5830,12 @@ subroutine wtrc_q1q2_pjr(dqdt        , ideep, lengath, &
                     jd      ,wtrprd  ,wtdlf   ,dtime)
 
 
-!----------------------------------------------------------------------- 
-! 
-! Purpose: This subroutine is designed to 
+!-----------------------------------------------------------------------
+!
+! Purpose: This subroutine is designed to
 !calculate the water tracer/isotope tendencies due to
 !the ZM deep convective scheme.
-! 
+!
 ! Author: Jesse Nusbaumer <nusbaume@colorado.edu> - August, 2012
 !
 !
@@ -5878,17 +5844,18 @@ subroutine wtrc_q1q2_pjr(dqdt        , ideep, lengath, &
 !       occured.  Ideally, the temperature before and after the latent
 !       heating or cooling would be known, and the phase change tendencies
 !       would be solved iterively over a changing temperature, similar
-!       to what's done in the cloud physics.  For now,  using the final 
+!       to what's done in the cloud physics.  For now,  using the final
 !       temperature should be fine. - JN
-! 
+!
 !-----------------------------------------------------------------------
 
-!**************                                                                           
+!**************
 !Use statements
 !**************
 
  use physconst,       only: cpair, latvap, rair, epsilo, gravit
  use ppgrid,          only: pverp
+ use water_isotopes,  only: difrm
 
 !********************
 !Variable decleration
@@ -5898,12 +5865,12 @@ subroutine wtrc_q1q2_pjr(dqdt        , ideep, lengath, &
 !
 ! Input fields:
 !
-   logical, intent(in) :: done(pcols,pver)     !Updraft loop endpoint 
+   logical, intent(in) :: done(pcols,pver)     !Updraft loop endpoint
    integer, intent(in) :: lel(pcols)           !Equilibrium level (EL)
-   integer, intent(in) :: lcl(pcols)           !Lifted condensation level (LCL)    
+   integer, intent(in) :: lcl(pcols)           !Lifted condensation level (LCL)
    integer, intent(in) :: mx(pcols)            !Bottom of updraft
    integer, intent(in) :: jd(pcols)            !Top of downdraft
-   integer, intent(in) :: jt(pcols)            !Top of updraft 
+   integer, intent(in) :: jt(pcols)            !Top of updraft
    integer, intent(in) :: il2g
    integer, intent(in) :: msg
    integer, intent(in) :: ideep(pcols)         !location of deep convection
@@ -5922,7 +5889,7 @@ subroutine wtrc_q1q2_pjr(dqdt        , ideep, lengath, &
    real(r8), intent(in) :: du(pcols,pver)      !input detrainment rate in updraft [1/m]
    real(r8), intent(in) :: mupc(pcols,pver)    !mu before unit-change [unitless]
    real(r8), intent(in) :: eu(pcols,pver)      !input updraft entraiment rate [1/m]
-   real(r8), intent(in) :: mu(pcols,pver)      !mass flux in updraft 
+   real(r8), intent(in) :: mu(pcols,pver)      !mass flux in updraft
    real(r8), intent(in) :: md(pcols,pver)      !mass flux in downdraft
    real(r8), intent(in) :: qdb(pcols,pver)     !bulk water vapor mixing ratio in downdraft [kg/kg]
    real(r8), intent(in) :: tu(pcols,pver)      !temperature in updraft [K?]
@@ -5935,18 +5902,18 @@ subroutine wtrc_q1q2_pjr(dqdt        , ideep, lengath, &
    real(r8), intent(in) :: rppe(pcols,pver)    !g: rain production pre-evaporation [?]
    real(r8), intent(in) :: dsubcld(pcols)      !sub-cloud layer thickness [mb]
    real(r8), intent(in) :: pap(pcols,pver)     !Pressure at midpoints [Pa]
-   real(r8), intent(in) :: dz(pcols,pver)      !Layer thickness in height [m] 
+   real(r8), intent(in) :: dz(pcols,pver)      !Layer thickness in height [m]
    real(r8), intent(in) :: qds(pcols,pver)     !bulk water saturation value in downdraft [kg/kg]
    real(r8), intent(in) :: rpdpc(pcols,pver)   !precipitation production pre-unit change [kg/kg/m]
    real(r8), intent(in) :: c0mask(pcols)       !Autoconversion rates [1/m]
-   real(r8), intent(in) :: eps0(pcols)         !Not quite sure, should look up... 
+   real(r8), intent(in) :: eps0(pcols)         !Not quite sure, should look up...
    real(r8), intent(in) :: dtime               !2xdt (model timestep) [seconds]
 !
 ! Output fields:
 !
    real(r8),intent(out) :: dqdt(pcols,pver,pcnst)       !water tracer tendency [kg/kg/s]
    real(r8),intent(out) :: wtrprd(pcols,pver,pcnst)     !precipitation production rate [kg/kg/s]
-   real(r8),intent(out) :: wtdlf(pcols,pver,wtrc_nwset) !tendency due to condensate detrainment [kg/kg/s] 
+   real(r8),intent(out) :: wtdlf(pcols,pver,wtrc_nwset) !tendency due to condensate detrainment [kg/kg/s]
 !
 ! Work fields:
 !
@@ -5973,9 +5940,9 @@ subroutine wtrc_q1q2_pjr(dqdt        , ideep, lengath, &
    real(r8) hsat(pcols,pver,wtrc_nwset)  !tracer saturated env. moist static energy
    real(r8) qst(pcols,pver,wtrc_nwset)   !tracer saturated env. vapor mixing ratio [kg/kg]
    real(r8) gamma(pcols,pver,wtrc_nwset) !No clue, just need it for parameterization
-   real(r8) hsthat(pcols,pver,wtrc_nwset)!hsat at interfaces 
-   real(r8) qsthat(pcols,pver,wtrc_nwset)!qsat at interfaces 
-   real(r8) gamhat(pcols,pver,wtrc_nwset)!Gamma at interfaces 
+   real(r8) hsthat(pcols,pver,wtrc_nwset)!hsat at interfaces
+   real(r8) qsthat(pcols,pver,wtrc_nwset)!qsat at interfaces
+   real(r8) gamhat(pcols,pver,wtrc_nwset)!Gamma at interfaces
    real(r8) Ru(pcols,pver,wtrc_nwset)    !water tracer updraft ratio [unitless]
    real(r8) Rd(pcols,pver,wtrc_nwset)    !water tracer downdraft ratio [unitless]
    real(r8) huct(pcols,pver)                     !MSE storage variable for cloud top height
@@ -5984,14 +5951,14 @@ subroutine wtrc_q1q2_pjr(dqdt        , ideep, lengath, &
    real(r8) alpha                                !fractionation factor [unitless]
    real(r8) dliqiso                              !needed for isotopic equilbration subroutine [kg/kg]
    real(r8) nu                                   !ice/liquid fraction [unitless]
-   real(r8) que                                  !equilibrated updraft vapor [kg/kg] 
-   real(r8) qle                                  !equilibrated cloud condensate [kg/kg]   
+   real(r8) que                                  !equilibrated updraft vapor [kg/kg]
+   real(r8) qle                                  !equilibrated cloud condensate [kg/kg]
    real(r8) qur                                  !Rayleigh-distilled updraft vapor [kg/kg]
-   real(r8) qlr                                  !Rayleigh-distilled updraft vapor [kg/kg] 
+   real(r8) qlr                                  !Rayleigh-distilled updraft vapor [kg/kg]
    real(r8) cue                                  !equilibrated updraft condensation rate [kg/kg]
    real(r8) cur                                  !Rayleigh-distilled updraft condensate [kg/kg]
    real(r8) cuh                                  !H2O updraft condensate [kg/kg]
-   real(r8) fr                                   !Fraction of moisture remaining [unitless] 
+   real(r8) fr                                   !Fraction of moisture remaining [unitless]
    real(r8) ltmp                                 !temporary standard liquid amount [kg/kg]
    real(r8) iltmp                                !temporary isotopic liquid amount [kg/kg]
    real(r8) vtmp                                 !temporary standard vapor amount  [kg/kg]
@@ -5999,32 +5966,31 @@ subroutine wtrc_q1q2_pjr(dqdt        , ideep, lengath, &
 
    !For precip production:
    real(r8) totpcp(pcols,wtrc_nwset)     !Total precipitation [kg/kg]
-   real(r8) totevp(pcols,wtrc_nwset)     !Total evaporation [kg/kg] 
+   real(r8) totevp(pcols,wtrc_nwset)     !Total evaporation [kg/kg]
    real(r8) rprd(pcols,pver,wtrc_nwset)          !Precipitation production pre-unit change [kg/kg/m]
    real(r8) pevp(pcols,pver,wtrc_nwset)          !precipitation evaporation  [kg/kg/m]
    real(r8) ql(pcols,pver,wtrc_nwset)            !precipitable liquid [kg/kg]
    real(r8) ql1                                  !temporary precipitable liquid storage [kg/kg]
-   real(r8) Rr                                   !precipitation production ratio [unitless] 
+   real(r8) Rr                                   !precipitation production ratio [unitless]
 
    !For mass fixer:
    real(r8) uqdiff                               !correction factor for updraft humidity [kg/kg]
-   real(r8) dqdiff                               !correction factor for downdraft humidity [kg/kg]  
+   real(r8) dqdiff                               !correction factor for downdraft humidity [kg/kg]
    real(r8) oval                                 !original H2O water mass before mass-fixing [kg/kg]
    real(r8) Rfix                                 !Water tracer/isotope ratio used to apply mass fix [unitless]
 
    !Other variables:
-   real(r8) Rc                                   !water tracer condensation ratio [unitless] 
+   real(r8) Rc                                   !water tracer condensation ratio [unitless]
    real(r8) Re                                   !water tracer evaporation ratio [unitless]
    real(r8) qdifr
    real(r8) emc
    real(r8) mdt
 
-  !For rain evaporation: 
+  !For rain evaporation:
    real(r8) rmass(pcols,wtrc_nwset)              !vertical integral of rain production and evaporation [kg/kg]
-   real(r8) difrm(pwtspec)                       !diffusivity ratio array
    real(r8) fequil                               !fraction equilibrated (unitless)
    real(r8) radius                               !assumed radius of raindrop (m)
-   integer  ispec                                !water isotope species 
+   integer  ispec                                !water isotope species
 
 !***************************************
 !Exit if no deep convection is occurring
@@ -6040,14 +6006,6 @@ if(lengath.eq.0) then
    return
 
 else
-
-!*************
-!Set constants
-!*************
-
-!Diffusivity ratios and powers (should be called from water_isotopes.F90 eventually):
-difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct from paper)
-
 
 !***********************
 !Loop over water tracers
@@ -6340,7 +6298,7 @@ difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct
    !initalize precipitation variables (needed for evaporation/equilibration):
    rmass(:,:) = 0._r8
 
-  !loop 
+  !loop
    do k = msg+2,pver
      do i=1,lengath
        if (k >= jd(i) .and. k < mx(i) .and. eps0(i) > 0._r8) then
@@ -6364,11 +6322,11 @@ difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct
           !Isotopically Equilibrate precipitation with downdraft vapor
           !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
           !NOTE:  One could make the argument that to be as physically
-          !       realistic as possible, there should be some sort 
+          !       realistic as possible, there should be some sort
           !       of isotopic exchange between the rain and the downdraft
           !       water  vapor.  However, adding it to the model appears
           !       to produce unrealistic depletion in the precipitation
-          !       and surface vapor, and possibly too much enrichment 
+          !       and surface vapor, and possibly too much enrichment
           !       for water vapor in the upper troposphere.  This could be
           !       due to an error in the isotope routines, or a problem
           !       with the ZM scheme itself, particularly one related
@@ -6381,7 +6339,7 @@ difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct
           !       In the future, this should be examined more closely,
           !       particularly with new convection schemes like CLUBB,
           !       UNICON, or a microphysics-enabled ZM scheme. -JN
-         
+
           !if(.false.) then !turn off rain equilibration.
           !if(wisotope .and. (m .gt. 1)) then !only do for isotopes
 
@@ -6411,8 +6369,8 @@ difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct
           !  iltmp= (1._r8-nu)*(rmass(i,m)-(Rd(i,k,m)*pevp(i,k,1)*dz(i,k)))
 
            !vapor:
-          !  vtmp = qd(i,k,1) 
-          !  ivtmp= qd(i,k,m) 
+          !  vtmp = qd(i,k,1)
+          !  ivtmp= qd(i,k,m)
 
             !calculate raindrop radius:
             !radius = 2._r8/(4.1_r8*(((ltmp/dtime)*dp(i,k)/gravit)*60._r8*60._r8)**-0.21_r8)
@@ -6446,7 +6404,7 @@ difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct
 
            !Apply mass fix:
            !---------------
-           if(m .eq. 1) then !only do for H2O tracer 
+           if(m .eq. 1) then !only do for H2O tracer
              oval   = qd(i,k+1,m) !save original value
              dqdiff = qdb(i,k+1)-qd(i,k+1,m)
            end if
@@ -6455,12 +6413,12 @@ difrm = (/ 1._r8, 1._r8, 0.9757_r8, 0.9727_r8 /)         ! Merlivat 1978 (direct
            !---------------
 
            !calculate total evaporation for water tracers/isotopes (to prevent negative precip):
-           totevp(i,m) = totevp(i,m) - dz(i,k)*ed(i,k)*q(ideep(i),k,wtrc_iatype(m,iwtvap)) 
+           totevp(i,m) = totevp(i,m) - dz(i,k)*ed(i,k)*q(ideep(i),k,wtrc_iatype(m,iwtvap))
 
          end do
 
        end if
-      !complain if dqdiff is too large: 
+      !complain if dqdiff is too large:
       !----------------
        if((dqdiff/qdb(i,k)) .gt. 10e-10_r8) then !relative error greater than 1e-9?
          write(iulog,*) 'wtrc q1q2 dqdiff error here!',dqdiff/qdb(i,k),dqdiff,&
@@ -6545,7 +6503,7 @@ end do
          end if
 
          !calculate detrained condensate:
-         wtdlf(ideep(i),k,m) = du(i,k)*ql(i,k+1,m) 
+         wtdlf(ideep(i),k,m) = du(i,k)*ql(i,k+1,m)
 
       end do
     end do
@@ -6611,7 +6569,6 @@ subroutine wtrc_chem_ch4ox_tend(state, pbuf, ptend)
 !due to chemistry comes purely from methane oxidation.  If other chemical
 !reactions also produce water, then they should also be dealt with either
 !here or a in a different subroutine. -JN
-
 !
 !-----------------------------------------------------------------------
     use physics_types,    only: physics_state, physics_ptend
@@ -6778,6 +6735,76 @@ end subroutine wtrc_chem_ch4ox_tend
 
 
 !=======================================================================
+subroutine wtrc_rad_decay(state, ptend, ztodt)
+!-----------------------------------------------------------------------
+!
+! Purpose: To apply radioactive decay to relevant water isotope species,
+!          which at this stage is only HTO.
+!
+! Method:  Apply "wiso_decay" to the water tracer mass tendency, which itself
+!          is simply an expontential function usng Tritium's half-life.
+!
+!          This function ensures that the tendency will never be so large as to
+!          produce negative masses, just as long as the correct initial water
+!          tracer mass is given.
+!
+! Author: Jesse Nusbaumer <nusbaume@ucar.edu> - July, 2020
+!
+!-----------------------------------------------------------------------
+   use physics_types,    only: physics_state, physics_ptend
+   use water_isotopes,   only: wiso_decay
+!---------------------------- Arguments --------------------------------
+
+   type(physics_state), intent(in)    :: state     ! physics state variables [kg/kg]
+   type(physics_ptend), intent(inout) :: ptend     ! parameterization tendencies [kg/kg/s]
+
+   real(r8), intent(in) :: ztodt !Physics time step [s]
+
+!---------------------------- Local variables ----------------------------
+
+   real(r8) :: rad_decay !Mass tendency due to radioactive dcay [kg/kg/s]
+
+   integer  :: ncol      !Number of physics (grid) columns
+   integer  :: i, k, m   !Loop control variables
+
+!---------------------------  End declarations ---------------------------
+
+   !Exit subroutine if no water tracer species are HTO:
+   if (.not. any(iwspec == isphto)) return
+
+   !Extract grid column number from physics state:
+   ncol = state%ncol
+
+   !Loop over water tracers:
+   do m=1, wtrc_nwset
+      !Determine if water tracer species is HTO:
+      if (iwspec(wtrc_iatype(m,iwtvap)) == isphto) then
+
+         !Set tendency logical to true.
+         ptend%lq(wtrc_iatype(m,iwtvap)) = .true.
+
+         !Calculate actual tendencies:
+         do k = 1, pver     !loop over all vertical levels
+            do i = 1, ncol  !loop over all physics columns
+
+               !Calculate radioactive decay tendency:
+               call wiso_decay(iwspec(wtrc_iatype(m,iwtvap)), ztodt, &
+                               state%q(i,k,wtrc_iatype(m,iwtvap)), &
+                               rad_decay)
+
+               !Add radioactive decay to state tendency:
+               ptend%q(i,k,wtrc_iatype(m,iwtvap)) = &
+                  ptend%q(i,k,wtrc_iatype(m,iwtvap)) + rad_decay
+
+            end do !ncol
+         end do !pver
+      end if !isphto
+   end do !water tracers
+
+end subroutine wtrc_rad_decay
+
+
+!=======================================================================
 function wtrc_get_rao2(isp)
 !-----------------------------------------------------------------------
 ! Purpose: Retrieve internal Rao2 variable, based on species index
@@ -6788,10 +6815,10 @@ function wtrc_get_rao2(isp)
     integer , intent(in)  :: isp          ! species index
     real(r8) :: wtrc_get_rao2             ! return isotope ratio
 
-  ! Isotope enrighment of atmospheric oxygen (Bender 1999, triple-isotope)
+  ! Isotope enrichment of atmospheric oxygen (Bender 1999, triple-isotope)
   ! NOTE:  This should probably be moved to water_isotopes.F90 at some point -JN.
     real(r8), dimension(pwtspec), parameter :: &  ! mean ocean surface enrichent
-      bao2  = (/ 1._r8   ,1._r8   ,0.97704_r8   ,0.988222_r8 /)
+      bao2  = (/ 1._r8, 1._r8, 1._r8, 0.97704_r8, 0.988222_r8, 1._r8 /)
 
 !-----------------------------------------------------------------------
     wtrc_get_Rao2 = bao2(isp)*wtrc_get_rstd(isp)

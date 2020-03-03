@@ -12,15 +12,15 @@ module atm_import_export
 
 contains
 
-  subroutine atm_import( x2a, cam_in, restart_init )
+  subroutine atm_import( x2a, cam_in, cam_out, restart_init )
 
     !-----------------------------------------------------------------------
     use cam_cpl_indices
-    use camsrfexch        , only: cam_in_t
-    use phys_grid         , only: get_ncols_p
+    use camsrfexch        , only: cam_in_t, cam_out_t
+    use phys_grid         , only: get_ncols_p, get_rlat_p, get_rlon_p
     use ppgrid            , only: begchunk, endchunk
     use shr_const_mod     , only: shr_const_stebol
-    use shr_sys_mod       , only: shr_sys_abort 
+    use shr_sys_mod       , only: shr_sys_abort
     use seq_drydep_mod    , only: n_drydep
     use shr_fire_emis_mod , only: shr_fire_emis_mechcomps_n
     use co2_cycle         , only: c_i, co2_readFlux_ocn, co2_readFlux_fuel
@@ -40,6 +40,7 @@ contains
     !
     real(r8)      , intent(in)    :: x2a(:,:)
     type(cam_in_t), intent(inout) :: cam_in(begchunk:endchunk)
+    type(cam_out_t), intent(in)   :: cam_out(begchunk:endchunk)
     logical, optional, intent(in) :: restart_init
     !
     ! Local variables
@@ -53,6 +54,14 @@ contains
     integer, pointer   :: dst_a1_ndx, dst_a3_ndx
     integer            :: nstep
     logical            :: overwrite_flds
+
+    !water isotopes:
+    real(r8)           :: R  !water tracer ratio
+
+    real(r8)           :: wtlat
+    real(r8)           :: wtlon
+    real(r8), parameter:: radtodeg = 180.0_r8/SHR_CONST_PI
+
     !-----------------------------------------------------------------------
 
     overwrite_flds = .true.
@@ -82,13 +91,304 @@ contains
           ! NOTE: isph2o is total water, so is the same as Q
           !
 
+          !Need to set this before doing water tracers:
+          cam_in(c)%landfrac(i)  = x2a(index_x2a_Sf_lfrac, ig)
+
+          !Need to define lat/lon for water tracers:
+          wtlat = get_rlat_p(c,i)*radtodeg
+          wtlon = get_rlon_p(c,i)*radtodeg
+
           if (trace_water) then
              do j = 1, wtrc_nsrfvap
                select case(wtrc_species(wtrc_iasrfvap(j)))
                  case (isph2o)
-                   cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = -x2a(index_x2a_Faxx_evap,ig)
+                   if(j .eq. 1) then !H2O tracer?
+                     cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = -x2a(index_x2a_Faxx_evap,ig)
+                   else !water tag?
+                     !H2O water tags:
+                     !----------------
+                     if(-x2a(index_x2a_Faxx_evap,ig) .lt. 0._r8) then !dew/frost?
+                       !calculate surface vapor ratio:
+                       R = wtrc_ratio(wtrc_species(wtrc_iasrfvap(j)),cam_out(c)%qbot(i,wtrc_indices(wtrc_iasrfvap(j))),&
+                                     cam_out(c)%qbot(i,wtrc_indices(wtrc_iasrfvap(1))))
+                       cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = R*-x2a(index_x2a_Faxx_evap,ig)
+                     else
+                       if(j .eq. 2) then
+                         !A5535 Atlantic
+                         if((wtlat > -55._r8) .and. (wtlat <= -35._r8)) then
+                           if((wtlon > 290._r8) .OR. (wtlon <= 25._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted
+                             !no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !All Land:
+                         !cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) =
+                         !cam_in(c)%landfrac(i)*-x2a(index_x2a_Faxx_evap,ig)
+                       else if(j .eq. 3) then
+                         !A3524 Atlantic
+                         if((wtlat > -35._r8) .and. (wtlat <= -24._r8)) then
+                           if((wtlon > 290._r8) .OR. (wtlon <= 25._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted
+                             !no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                       else if(j .eq. 4) then
+                         !A2424 Atlantic
+                         if((wtlat > -24._r8) .and. (wtlat <= 24._r8)) then
+                           if((wtlon > 290._r8) .OR. (wtlon <= 25._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you would put them here!
+                       else if(j .eq. 5) then
+                         !I5535 Indian
+                         if((wtlat > -55._r8) .and. (wtlat <= -35._r8)) then
+                           if((wtlon > 25._r8) .and. (wtlon <= 130._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted
+                             !no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you
+                         !would put them here!
+                       else if(j .eq. 6) then
+                         !I3524 Indian
+                         if((wtlat > -35._r8) .and. (wtlat <= -24._r8)) then
+                           if((wtlon > 25._r8) .and. (wtlon <= 130._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you would put them here!
+                       else if(j .eq. 7) then
+                         !I2424 Indian
+                         if((wtlat > -24._r8) .and. (wtlat <= 24._r8)) then
+                           if((wtlon > 25._r8) .and. (wtlon <= 130._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted
+                             !no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you
+                         !would put them here!
+                      else if(j .eq. 8) then
+                         !PW5535 Pacific West
+                         if((wtlat > -55._r8) .and. (wtlat <= -35._r8)) then
+                           if((wtlon > 130._r8) .and. (wtlon <= 230._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you would put them here!
+                      else if(j .eq. 9) then
+                         !PW3524 Pacific West
+                         if((wtlat > -35._r8) .and. (wtlat <= -24._r8)) then
+                           if((wtlon > 130._r8) .and. (wtlon <= 230._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you would put them here!
+                      else if(j .eq. 10) then
+                         !PW2424 Pacific West
+                         if((wtlat > -24._r8) .and. (wtlat <= 24._r8)) then
+                           if((wtlon > 130._r8) .and. (wtlon <= 230._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you would put them here!
+                      else if(j .eq. 11) then
+                         !PE5535 Pacific East
+                         if((wtlat > -55._r8) .and. (wtlat <= -35._r8)) then
+                           if((wtlon > 230._r8) .and. (wtlon <= 290._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you would put them here!
+                      else if(j .eq. 12) then
+                         !PE3524 Pacific East
+                         if((wtlat > -35._r8) .and. (wtlat <= -24._r8)) then
+                           if((wtlon > 230._r8) .and. (wtlon <= 290._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you would put them here!
+                      else if(j .eq. 13) then
+                         !PE2424 Pacific East
+                         if((wtlat > -24._r8) .and. (wtlat <= 24._r8)) then
+                           if((wtlon > 230._r8) .OR. (wtlon <= 290._r8)) then
+                             !NOTE:  Could also use ocnfrac here if you wanted no sea-ice fluxes.
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you would put them here!
+                      else if(j .eq. 14) then
+                         ! INDAN
+                         if((wtlat >= -90._r8) .and. (wtlat <= -55._r8)) then
+                           if((wtlon > 25._r8) .and. (wtlon <= 90._r8)) then
+                            !NOTE:  Could also use ocnfrac here if you wanted no
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you
+                         !NOTE:  If you have more non-isotopic water tags, you would put them here!
+                      else if(j .eq. 15) then
+                         !WPACAN
+                         if((wtlat >= -90._r8) .and. (wtlat <= -55._r8)) then
+                           if((wtlon > 90._r8) .and. (wtlon <= 160._r8)) then
+
+                            !NOTE:  Could also use ocnfrac here if you wanted no
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+
+                     else if(j .eq. 16) then
+                         !ROSSAN
+                         if((wtlat >= -90._r8) .and. (wtlat <= -55._r8)) then
+                           if((wtlon > 160._r8) .and. (wtlon <= 230._r8)) then
+
+                            !NOTE:  Could also use ocnfrac here if you wanted no
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                     else if(j .eq. 17) then
+                         !BELLAN
+                         if((wtlat >= -90._r8) .and. (wtlat <= -55._r8)) then
+                           if((wtlon > 230._r8) .and. (wtlon <= 297._r8)) then
+
+                            !NOTE:  Could also use ocnfrac here if you wanted no
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                     else if(j .eq. 18) then
+                         !WSWAN
+                         if((wtlat >= -90._r8) .and. (wtlat <= -55._r8)) then
+                           if((wtlon > 297._r8) .and. (wtlon <= 340._r8)) then
+                         
+                            !NOTE:  Could also use ocnfrac here if you wanted no
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                     else if(j .eq. 19) then
+                         !WSEAN
+                         if((wtlat >= -90._r8) .and. (wtlat <= -55._r8)) then
+                           if((wtlon > 340._r8) .OR. (wtlon <= 25._r8)) then
+                         
+                            !NOTE:  Could also use ocnfrac here if you wanted no
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                           else
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                           end if
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                     else if(j .eq. 20) then
+                         !ANTLAND  Antarctica Land
+                         if((wtlat >= -90._r8) .and. (wtlat < -60._r8)) then
+                            !NOTE:  Could also use ocnfrac here if you wanted no
+                             cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = cam_in(c)%landfrac(i)*-x2a(index_x2a_Faxx_evap,ig)
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                     else if(j .eq. 21) then
+                         !OC24 All Other Ocean
+                         if(wtlat > 24._r8) then
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = (1._r8-cam_in(c)%landfrac(i))*-x2a(index_x2a_Faxx_evap,ig)
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                     else if(j .eq. 22) then
+                         !LANDNANT All Other Land
+                         if(wtlat >= -60._r8) then
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = cam_in(c)%landfrac(i)*-x2a(index_x2a_Faxx_evap,ig)
+                         else
+                           cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = 0._r8
+                         end if
+                         !NOTE:  If you have more non-isotopic water tags, you
+                         !would put them here!
+
+                         !NOTE:  If you have more non-isotopic water tags, you would put them here!
+                       end if !water tracers
+                     end if !dew/frost
+                   end if !H2O tracer
                  case (isph216o)
-                   cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = -x2a(index_x2a_Faxx_evap_16O,ig)
+                   !cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = -x2a(index_x2a_Faxx_evap_16O,ig)
+                   !Given that there are currently no isotopic land-surface fluxes, make sure to set H216O to bulk water:
+                   cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = -x2a(index_x2a_Faxx_evap,ig)
                  case (isphdo)
                    cam_in(c)%cflx(i,wtrc_indices(wtrc_iasrfvap(j))) = -x2a(index_x2a_Faxx_evap_HDO,ig)
                  case (isph218o)
@@ -110,7 +410,7 @@ contains
           cam_in(c)%u10(i)       =  x2a(index_x2a_Sx_u10,   ig)
           cam_in(c)%icefrac(i)   =  x2a(index_x2a_Sf_ifrac, ig)
           cam_in(c)%ocnfrac(i)   =  x2a(index_x2a_Sf_ofrac, ig)
-	  cam_in(c)%landfrac(i)  =  x2a(index_x2a_Sf_lfrac, ig)
+!	  cam_in(c)%landfrac(i)  =  x2a(index_x2a_Sf_lfrac, ig)
 
           if ( associated(cam_in(c)%ram1) ) &
                cam_in(c)%ram1(i) =  x2a(index_x2a_Sl_ram1 , ig)

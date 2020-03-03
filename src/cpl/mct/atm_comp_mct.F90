@@ -340,12 +340,12 @@ CONTAINS
 
        call seq_timemgr_EClockGetData(EClock, StepNo=StepNo)
        if (StepNo == 0) then
-          call atm_import( x2a_a%rattr, cam_in )
+          call atm_import( x2a_a%rattr, cam_in, cam_out )
           call cam_run1 ( cam_in, cam_out )
           call atm_export( cam_out, a2x_a%rattr )
        else
           call atm_read_srfrest_mct( EClock, x2a_a, a2x_a )
-          call atm_import( x2a_a%rattr, cam_in, restart_init=.true. )
+          call atm_import( x2a_a%rattr, cam_in, cam_out, restart_init=.true. )
           call cam_run1 ( cam_in, cam_out )
        end if
 
@@ -460,7 +460,7 @@ CONTAINS
     ! Map input from mct to cam data structure
 
     call t_startf ('CAM_import')
-    call atm_import( x2a_a%rattr, cam_in )
+    call atm_import( x2a_a%rattr, cam_in, cam_out )
     call t_stopf  ('CAM_import')
 
     ! Cycle over all time steps in the atm coupling interval

@@ -23,7 +23,7 @@ end interface cnst_init_default
 CONTAINS
 !==============================================================================
 
-  subroutine cnst_init_default_col(m_cnst, latvals, lonvals, q, mask,         &
+  subroutine cnst_init_default_col(m_cnst,num_blck, latvals, lonvals, q, mask,         &
        verbose, notfound, z)
     use constituents,  only: cnst_name, cnst_read_iv
     use aoa_tracers,   only: aoa_tracers_implements_cnst,   aoa_tracers_init_cnst
