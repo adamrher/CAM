@@ -1,5 +1,114 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+===============================================================
+
+Tag name: cam6_2_030
+Originator(s): juliob, eaton
+Date: Mon 08 Jun 2020 10:33:15 AM MDT
+One-line Summary: Fix for floating point issue in GW drag.
+
+Purpose of changes:
+
+. Fix a floating point issue in GW drag that seems to be responsible for
+  instabilities in WACCM configurations with the SE dycore.
+
+  ** Note: This fix is a workaround, the underlying source of the cascading
+           error caused by small values still should be tracked down and
+           fixed.  See ESCOMP/CAM issue #150.
+  
+Bugs fixed (include bugzilla ID): none
+
+Describe any changes made to build system: none
+
+Describe any changes made to the namelist: none
+
+List any changes to the defaults for the boundary datasets: none
+
+Describe any substantial timing or memory changes: none
+
+Code reviewed by: goldy, cacraig, nusbaume
+
+List all files eliminated: none
+
+List all files added and what they do: none
+
+List all existing files that have been modified, and describe the changes:
+
+src/physics/cam/gw_common.F90
+. Fix for floating point issue.
+
+If there were any failures reported from running test_driver.sh on any test
+platform, and checkin with these failures has been OK'd by the gatekeeper,
+then copy the lines from the td.*.status files for the failed tests to the
+appropriate machine below.  All failed tests must be justified.
+
+cheyenne/intel: PASS except:
+017 bl370 TBL.sh f1.9c6aqtsvbsdh outfrq3s+2000_trop_strat_vbs_cam6 9s .........................FAIL! rc= 7 at Fri Jun  5 12:44:48 MDT 2020
+023 bl390 TBL.sh f1.9c4aqwmxdh outfrq3s+waccmx_ma_2000_cam4 9s ................................FAIL! rc= 7 at Fri Jun  5 13:16:30 MDT 2020
+026 bl391 TBL.sh f1.9c4aqwmxidh outfrq3s 9s ...................................................FAIL! rc= 7 at Fri Jun  5 13:34:20 MDT 2020
+
+cheyenne/intel/aux_cam: PASS except:
+ERP_Ld3.f09_f09_mg17.FWHIST.cheyenne_intel.cam-reduced_hist1d (Overall: DIFF) details:
+  FAIL ERP_Ld3.f09_f09_mg17.FWHIST.cheyenne_intel.cam-reduced_hist1d BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+ERP_Ld3.f19_f19_mg17.FW4madSD.cheyenne_intel.cam-outfrq3d (Overall: DIFF) details:
+  FAIL ERP_Ld3.f19_f19_mg17.FW4madSD.cheyenne_intel.cam-outfrq3d BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+ERP_Ln9.f09_f09_mg17.F1850.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL ERP_Ln9.f09_f09_mg17.F1850.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s_mg3 (Overall: DIFF) details:
+  FAIL ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s_mg3 BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+ERP_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL ERP_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+ERP_Ln9.f09_f09_mg17.FHIST_BDRD.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL ERP_Ln9.f09_f09_mg17.FHIST_BDRD.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+ERP_Ln9.f19_f19_mg17.FWsc1850.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL ERP_Ln9.f19_f19_mg17.FWsc1850.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+ERP_Ln9.ne30pg3_ne30pg3_mg17.FW2000climo.cheyenne_intel.cam-outfrq9s_wcm_ne30 (Overall: DIFF) details:
+  FAIL ERP_Ln9.ne30pg3_ne30pg3_mg17.FW2000climo.cheyenne_intel.cam-outfrq9s_wcm_ne30 BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+ERS_Ln9.f19_f19_mg17.FSPCAMS.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL ERS_Ln9.f19_f19_mg17.FSPCAMS.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+ERS_Ln9.f19_f19_mg17.FXHIST.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL ERS_Ln9.f19_f19_mg17.FXHIST.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_D_Ln9.f09_f09_mg17.FCvbsxHIST.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL SMS_D_Ln9.f09_f09_mg17.FCvbsxHIST.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_D_Ln9.f09_f09_mg17.FSD.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL SMS_D_Ln9.f09_f09_mg17.FSD.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_D_Ln9.f19_f19_mg17.FC6X2000.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL SMS_D_Ln9.f19_f19_mg17.FC6X2000.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_D_Ln9.f19_f19_mg17.FWma2000climo.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL SMS_D_Ln9.f19_f19_mg17.FWma2000climo.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_D_Ln9.f19_f19_mg17.FXHIST.cheyenne_intel.cam-outfrq9s_amie (Overall: DIFF) details:
+  FAIL SMS_D_Ln9.f19_f19_mg17.FXHIST.cheyenne_intel.cam-outfrq9s_amie BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_D_Ln9.ne0CONUSne30x8_ne0CONUSne30x8_mt12.FCHIST.cheyenne_intel.cam-outfrq9s_refined_camchem (Overall: DIFF) details:
+  FAIL SMS_D_Ln9.ne0CONUSne30x8_ne0CONUSne30x8_mt12.FCHIST.cheyenne_intel.cam-outfrq9s_refined_camchem BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_Ld1.f09_f09_mg17.FW2000climo.cheyenne_intel.cam-outfrq1d (Overall: DIFF) details:
+  FAIL SMS_Ld1.f09_f09_mg17.FW2000climo.cheyenne_intel.cam-outfrq1d BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_Lm13.f10_f10_mg37.F2000climo.cheyenne_intel.cam-outfrq1m (Overall: DIFF) details:
+  FAIL SMS_Lm13.f10_f10_mg37.F2000climo.cheyenne_intel.cam-outfrq1m BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-nudging (Overall: DIFF) details:
+  FAIL SMS_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-nudging BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_Ln9.f09_f09_mg17.FW1850.cheyenne_intel.cam-reduced_hist3s (Overall: DIFF) details:
+  FAIL SMS_Ln9.f09_f09_mg17.FW1850.cheyenne_intel.cam-reduced_hist3s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+SMS_Ln9.f19_f19.F2000climo.cheyenne_intel.cam-silhs (Overall: DIFF) details:
+  FAIL SMS_Ln9.f19_f19.F2000climo.cheyenne_intel.cam-silhs BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_029: DIFF
+
+izumi/nag: PASS except:
+056 bl471 TBL.sh f10c6aqwmadm outfrq3s 9s .....................................................FAIL! rc= 7 at Fri Jun  5 12:55:32 MDT 2020
+
+izumi/pgi: PASS except:
+014 bl314 TBL.sh f10c4aqwscdm outfrq3s_diags 9s ...............................................FAIL! rc= 7 at Fri Jun  5 12:56:14 MDT 2020
+
+CAM tag used for the baseline comparison tests if different than previous
+tag:
+
+Summarize any changes to answers: All baseline comparisons for
+configurations using cam4, cam5, or cam6 physics are expected to failed.
+
+===============================================================
+>>>>>>> 128ea956... Merge pull request #148 from brian-eaton/gw_fix
 ===============================================================
 
 Tag name: cam6_2_031
