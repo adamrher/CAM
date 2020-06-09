@@ -2,6 +2,76 @@
 =======
 ===============================================================
 
+Tag name: cam6_2_031
+Originator(s): fvitt, aherring
+Date: 9 Jun 2020
+One-line Summary: Aerosol convection processes; ChangeLog template update
+Github PR URL: https://github.com/ESCOMP/CAM/pull/149
+
+Purpose of changes (include the issue number and title text for each relevant GitHub issue):
+
+. Refactor how resuspension of aerosols from rain to coarse modes is done in aerosol convective
+  processes.  This fixes GitHub issue "Bug in aerosol wet removal" #140.
+
+. Improvement of vertical velocity calculation in aerosol deep convction processes through
+  backing out the vertical velocities from zm mass fluxes using an assumed convective area
+  fraction of 0.01. This value was found to give the appropriate magnitude of vertical
+  velocities in the GATEIII iop, using the single column model (aherring)
+
+. Update ChangeLog template to replace Bugzilla with Github #152
+
+Describe any changes made to build system:
+
+Describe any changes made to the namelist:
+
+List any changes to the defaults for the boundary datasets:
+
+Describe any substantial timing or memory changes:
+
+Code reviewed by:
+
+List all files eliminated:
+
+List all files added and what they do:
+
+List all existing files that have been modified, and describe the changes:
+
+src/chemistry/modal_aero/modal_aero_convproc.F90
+ - Refactor how resuspension of aerosols from rain to coarse modes is done
+ - Improve the calculation of vertical velocities in aerosol deep convection
+   processes through backing out the vertical velocities from zm mass fluxes
+   using an assumed convective area fraction of 0.01. This value was found to
+   give the appropriate magnitude of vertical velocities in the GATEIII iop,
+   using the single column model. (aherring)
+ - Misc code cleanup
+
+src/chemistry/modal_aero/modal_aero_data.F90
+ - determine the order (largest to smallest) mode sizes
+
+cime_config/testdefs/testlist_cam.xml
+ - move the "wetdep" to the "camchem" suite
+
+doc/ChangeLog_template
+ - reference github issue titles and numbers (rather than bugzilla ID)
+
+If there were any failures reported from running test_driver.sh on any test
+platform, and checkin with these failures has been OK'd by the gatekeeper,
+then copy the lines from the td.*.status files for the failed tests to the
+appropriate machine below.  All failed tests must be justified.
+
+cheyenne/intel: All PASS
+
+cheyenne/intel/aux_cam: All PASS
+
+izumi/nag: All PASS
+
+izumi/pgi: All PASS
+
+Summarize any changes to answers: bit-for-bit unchanged
+
+===============================================================
+===============================================================
+
 Tag name: cam6_2_030
 Originator(s): juliob, eaton
 Date: Mon 08 Jun 2020 10:33:15 AM MDT
