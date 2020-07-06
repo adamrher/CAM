@@ -231,7 +231,9 @@ export ACCOUNT=$CAM_ACCOUNT
 export CAM_THREADS=$CAM_THREADS
 export CAM_TASKS=$CAM_TASKS
 
-module load intel/17.0.1
+module load intel/19.0.5
+source /glade/u/apps/ch/opt/lmod/7.5.3/lmod/lmod/init/sh
+
 module load mkl
 module list
 
@@ -279,7 +281,13 @@ export CAM_RESTART_THREADS=$CAM_RESTART_THREADS
 export CAM_TASKS=$CAM_TASKS
 export CAM_RESTART_TASKS=$CAM_RESTART_TASKS
 
-module load intel/17.0.1
+##Cheyenne hacks to avoid MPI_LAUNCH_TIMEOUT
+MPI_IB_CONGESTED=1
+MPI_LAUNCH_TIMEOUT=40
+
+source /glade/u/apps/ch/opt/lmod/7.5.3/lmod/lmod/init/sh
+
+module load intel/19.0.5
 module load mkl
 module list
 

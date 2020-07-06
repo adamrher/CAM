@@ -4,10 +4,642 @@
 =======
 ===============================================================
 
+<<<<<<< HEAD
 Tag name: cam6_2_030
 Originator(s): juliob, eaton
 Date: Mon 08 Jun 2020 10:33:15 AM MDT
 One-line Summary: Fix for floating point issue in GW drag.
+=======
+Tag name: cam6_2_034
+Originator(s): pel, eaton
+Date: Mon 06 Jul 2020 09:41:15 AM MDT
+One-line Summary: SE updates for release; physconst refactor.
+Github PR URL: https://github.com/ESCOMP/CAM/pull/153
+
+Purpose of changes (include the issue number and title text for each relevant GitHub issue):
+
+SE updates for release. #139
+
+. Address instabilities in WACCM simulations:
+  - new sponge layer formulation (WACCM only)
+  - code for horizontal and vertical molecular diffusion and thermal
+    conductivity in the SE dynamical core
+
+. Generalized calculation of species dependent thermodynamic properties
+  of dry air used by WACCM-X.  Only supported for FV/WACCM-X.  SE/WACCM-X
+  is still under development.
+
+. Refactoring in physconst.F90 for general compositions of air
+  and more accurate moist thermodynamics.
+
+. Add FV3 remapping functionality to improve total energy conservation
+  properties and QBO simulations with lower vertical resolution.
+
+. Add spun-up initial condition for various CAM and WACCM configurations.
+
+. Bug fix in the computation of OMEGA in SE dycore.
+
+Describe any changes made to build system: none
+
+Describe any changes made to the namelist:
+. add se_vert_remap_T, se_vert_remap_uvTq_alg, and se_vert_remap_tracer_alg
+. remove se_qsize_condensate_loading and se_variable_nsplit
+. add dry_air_species and water_species_in_air
+
+List any changes to the defaults for the boundary datasets: none
+
+Describe any substantial timing or memory changes: not checked
+
+Code reviewed by: cacraig, fvitt, goldy
+
+List all files eliminated: 
+
+src/dynamics/se/dycore/prim_si_mod.F90
+. unused code for geopotential height.
+
+List all files added and what they do:
+
+src/dynamics/se/dycore/fv_mapz.F90
+. Vertical remapping code which was extracted from the FV3 version of this
+  file. 
+
+List all existing files that have been modified, and describe the changes:
+
+bld/build-namelist
+. add defaults for dry and moist air composition
+. add defaults for se_vert_remap_T, se_vert_remap_uvTq_alg, and se_vert_remap_tracer_alg
+. remove defaults for se_qsize_condensate_loading and se_variable_nsplit
+
+bld/namelist_files/namelist_defaults_cam.xml
+. add initial files for WACCM compsets on SE grids
+. tunings for SE grids
+. add defaults for dry and moist air composition
+. add defaults for se_vert_remap_T, se_vert_remap_uvTq_alg, and se_vert_remap_tracer_alg
+. remove defaults for se_qsize_condensate_loading and se_variable_nsplit
+
+bld/namelist_files/namelist_definition.xml
+. add definition for dry and moist air composition
+. add definition for se_molecular_diff
+. add definition for se_vert_remap_T, se_vert_remap_uvTq_alg, and se_vert_remap_tracer_alg
+. remove definition for se_qsize_condensate_loading and se_variable_nsplit
+
+bld/namelist_files/use_cases/dctest_baro_kessler.xml
+. combine fincls into single output file and change test tracer names
+
+cime_config/testdefs/testmods_dirs/cam/outfrq3s_refined
+. remove setting se_qsize_condensate_loading=1
+
+src/control/cam_comp.F90
+. cam_init
+  - add call to composition_init
+
+src/dynamics/fv/te_map.F90
+. add log file info to help fix 'Lagrangian levels are crossing' error.
+
+src/dynamics/se/dp_coupling.F90
+. derived_phys_dry
+  - add code to adjust mixing ratios of O, O2, H, H2 for WACCMX
+
+. thermodynamic_consistency
+  - replace calculation of cp by call to get_cp from physconst module.
+
+src/dynamics/se/dycore/control_mod.F90
+. add variables for molecular_diff and vert_remap_uvTq_alg
+. cleanup
+
+src/dynamics/se/dycore/derivative_mod.F90
+. add in molecular diffusion code
+
+src/dynamics/se/dycore/dimensions_mod.F90
+. remove qsize_condensate_loading_*
+. add arrays for molecular diffusion
+
+src/dynamics/se/dycore/fvm_consistent_se_cslam.F90
+. changes in get_flux_segments_area_iterate arg list
+
+src/dynamics/se/dycore/fvm_mapping.F90
+. replace qsize_condensate_loading_* by thermodynamic_active_species_*
+
+src/dynamics/se/dycore/fvm_mod.F90
+. replace qsize_condensate_loading_* by thermodynamic_active_species_*
+. cleanup
+
+src/dynamics/se/dycore/global_norms_mod.F90
+. add diagnostic log output to print_cfl
+
+src/dynamics/se/dycore/namelist_mod.F90
+. cleanup
+
+src/dynamics/se/dycore/prim_advance_mod.F90
+. implement new sponge layer code
+. replace qsize_condensate_loading_* by thermodynamic_active_species_*
+
+src/dynamics/se/dycore/prim_advection_mod.F90
+. mods to vertical remap code
+. cleanup
+
+src/dynamics/se/dycore/prim_driver_mod.F90
+. mods for vertical remapping
+. mods for omega calc
+. cleanup
+
+src/dynamics/se/dycore/prim_state_mod.F90
+. replace qsize_condensate_loading_* by thermodynamic_active_species_*
+
+src/dynamics/se/dycore/vertremap_mod.F90
+. implement new vertical remapping options
+
+src/dynamics/se/dycore/viscosity_mod.F90
+. replace nu_div_scale_top by nu_div_lev and nu_lev
+
+src/dynamics/se/dyn_comp.F90
+. make use of new physconst interfaces for moist air composition
+. dyn_readnl
+  - cleanup unused vars
+  - add molecular diffusion code
+  - add FV3 vertical remapping option
+. dyn_init
+  - init of active condensed water species moved to routine
+    composition_init 
+  - add init of molecular diffusion and thermal conductivity
+
+src/dynamics/se/dyn_grid.F90
+. make use of new physconst interfaces for moist air composition
+
+src/dynamics/se/gravity_waves_sources.F90
+. make use of new physconst interfaces for moist air composition
+
+src/dynamics/se/restart_dynamics.F90
+. remove unused code
+
+src/dynamics/se/stepon.F90
+. add diagnostic output for dp_ref_gll
+. use new physconst routines for output of PS and tracers to initial file
+
+src/dynamics/se/test_fvm_mapping.F90
+. cleanup
+
+src/dynamics/tests/initial_conditions/ic_baroclinic.F90
+. add option to initialize tracers on specified height coordinate
+
+src/physics/cam/const_init.F90
+. add optional arg to pass height coordinate to tracers_init_cnst
+
+src/physics/cam/geopotential.F90
+. geopotential_dse
+  - set fvdyn true for either FV or SE dycores
+
+src/physics/cam/tracers.F90
+. add new tracers
+. tracers_init_cnst
+  - add optional arg for height coordinate
+. test_func
+  - add optional arg for height coordinate
+
+src/utils/physconst.F90
+. generalize treatment of non-constant dry air properties.
+. consolidate thermodynamic computations for moist air
+
+src/utils/string_utils.F90
+. add function to find index of a specified string in a list of strings
+
+test/system/test_driver.sh
+. update cheyenne to use intel/19.0.5
+
+
+If there were any failures reported from running test_driver.sh on any test
+platform, and checkin with these failures has been OK'd by the gatekeeper,
+then copy the lines from the td.*.status files for the failed tests to the
+appropriate machine below.  All failed tests must be justified.
+
+cheyenne/intel: PASS except:
+023 bl390 TBL.sh f1.9c4aqwmxdh outfrq3s+waccmx_ma_2000_cam4 9s ................................FAIL! rc= 7 at Tue Jun 30 19:53:03 MDT 2020
+026 bl391 TBL.sh f1.9c4aqwmxidh outfrq3s 9s ...................................................FAIL! rc= 7 at Tue Jun 30 20:11:35 MDT 2020
+029 bl730 TBL.sh h16adtermdm terminator 9s ....................................................FAIL! rc= 7 at Tue Jun 30 20:12:44 MDT 2020
+032 bl735 TBL.sh h16c5aqdm outfrq3s+1850-2005_cam5 9s .........................................FAIL! rc= 7 at Tue Jun 30 20:19:20 MDT 2020
+035 bl742 TBL.sh h16.3c6aqt5dm outfrq3s+hist_cam6 9s ..........................................FAIL! rc= 7 at Tue Jun 30 20:35:42 MDT 2020
+
+cheyenne/intel/aux_cam:
+ERP_D_Ln9.f09_f09_mg17.QSC6.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL ERP_D_Ln9.f09_f09_mg17.QSC6.cheyenne_intel.cam-outfrq9s NLCOMP
+ERP_D_Ln9.f19_f19_mg17.QPC6.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL ERP_D_Ln9.f19_f19_mg17.QPC6.cheyenne_intel.cam-outfrq9s NLCOMP
+ERP_Ld3.f09_f09_mg17.FWHIST.cheyenne_intel.cam-reduced_hist1d (Overall: NLFAIL) details:
+  FAIL ERP_Ld3.f09_f09_mg17.FWHIST.cheyenne_intel.cam-reduced_hist1d NLCOMP
+ERP_Lh12.f19_f19_mg17.FW4madSD.cheyenne_intel.cam-outfrq3h (Overall: NLFAIL) details:
+  FAIL ERP_Lh12.f19_f19_mg17.FW4madSD.cheyenne_intel.cam-outfrq3h NLCOMP
+ERP_Ln9.f09_f09_mg17.F1850.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL ERP_Ln9.f09_f09_mg17.F1850.cheyenne_intel.cam-outfrq9s NLCOMP
+ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s NLCOMP
+ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s_mg3 (Overall: NLFAIL) details:
+  FAIL ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s_mg3 NLCOMP
+ERP_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL ERP_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-outfrq9s NLCOMP
+ERP_Ln9.f09_f09_mg17.FHIST_BDRD.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL ERP_Ln9.f09_f09_mg17.FHIST_BDRD.cheyenne_intel.cam-outfrq9s NLCOMP
+ERP_Ln9.f19_f19_mg17.FWsc1850.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL ERP_Ln9.f19_f19_mg17.FWsc1850.cheyenne_intel.cam-outfrq9s NLCOMP
+ERP_Ln9.ne30pg3_ne30pg3_mg17.FW2000climo.cheyenne_intel.cam-outfrq9s_wcm_ne30 (Overall: DIFF) details:
+  FAIL ERP_Ln9.ne30pg3_ne30pg3_mg17.FW2000climo.cheyenne_intel.cam-outfrq9s_wcm_ne30 NLCOMP
+  FAIL ERP_Ln9.ne30pg3_ne30pg3_mg17.FW2000climo.cheyenne_intel.cam-outfrq9s_wcm_ne30 BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_033: DIFF
+ERS_Ln9.f09_f09_mg17.FX2000.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL ERS_Ln9.f09_f09_mg17.FX2000.cheyenne_intel.cam-outfrq9s NLCOMP
+  FAIL ERS_Ln9.f09_f09_mg17.FX2000.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_033: DIFF
+ERS_Ln9.f19_f19_mg17.FSPCAMS.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL ERS_Ln9.f19_f19_mg17.FSPCAMS.cheyenne_intel.cam-outfrq9s NLCOMP
+ERS_Ln9.f19_f19_mg17.FXSD.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL ERS_Ln9.f19_f19_mg17.FXSD.cheyenne_intel.cam-outfrq9s NLCOMP
+  FAIL ERS_Ln9.f19_f19_mg17.FXSD.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_033: DIFF
+ERS_Ln9.ne0TESTONLYne5x4_ne0TESTONLYne5x4_mg37.FADIAB.cheyenne_intel.cam-outfrq3s_refined (Overall: DIFF) details:
+  FAIL ERS_Ln9.ne0TESTONLYne5x4_ne0TESTONLYne5x4_mg37.FADIAB.cheyenne_intel.cam-outfrq3s_refined NLCOMP
+  FAIL ERS_Ln9.ne0TESTONLYne5x4_ne0TESTONLYne5x4_mg37.FADIAB.cheyenne_intel.cam-outfrq3s_refined BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_033: DIFF
+SMS_D_Ln9.f09_f09_mg17.FCts2nudged.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL SMS_D_Ln9.f09_f09_mg17.FCts2nudged.cheyenne_intel.cam-outfrq9s NLCOMP
+SMS_D_Ln9.f09_f09_mg17.FCvbsxHIST.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL SMS_D_Ln9.f09_f09_mg17.FCvbsxHIST.cheyenne_intel.cam-outfrq9s NLCOMP
+SMS_D_Ln9.f09_f09_mg17.FSD.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL SMS_D_Ln9.f09_f09_mg17.FSD.cheyenne_intel.cam-outfrq9s NLCOMP
+SMS_D_Ln9.f19_f19_mg17.FWma2000climo.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL SMS_D_Ln9.f19_f19_mg17.FWma2000climo.cheyenne_intel.cam-outfrq9s NLCOMP
+SMS_D_Ln9.f19_f19_mg17.FXHIST.cheyenne_intel.cam-outfrq9s_amie (Overall: DIFF) details:
+  FAIL SMS_D_Ln9.f19_f19_mg17.FXHIST.cheyenne_intel.cam-outfrq9s_amie NLCOMP
+  FAIL SMS_D_Ln9.f19_f19_mg17.FXHIST.cheyenne_intel.cam-outfrq9s_amie BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_033: DIFF
+SMS_D_Ln9.ne0CONUSne30x8_ne0CONUSne30x8_mt12.FCHIST.cheyenne_intel.cam-outfrq9s_refined_camchem (Overall: DIFF) details:
+  FAIL SMS_D_Ln9.ne0CONUSne30x8_ne0CONUSne30x8_mt12.FCHIST.cheyenne_intel.cam-outfrq9s_refined_camchem NLCOMP
+  FAIL SMS_D_Ln9.ne0CONUSne30x8_ne0CONUSne30x8_mt12.FCHIST.cheyenne_intel.cam-outfrq9s_refined_camchem BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_033: DIFF
+SMS_D_Ln9.ne30_ne30_mg17.FCnudged.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+  FAIL SMS_D_Ln9.ne30_ne30_mg17.FCnudged.cheyenne_intel.cam-outfrq9s NLCOMP
+  FAIL SMS_D_Ln9.ne30_ne30_mg17.FCnudged.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_033: DIFF
+SMS_D_Ln9.T42_T42.FSCAM.cheyenne_intel.cam-outfrq9s (Overall: NLFAIL) details:
+  FAIL SMS_D_Ln9.T42_T42.FSCAM.cheyenne_intel.cam-outfrq9s NLCOMP
+SMS_Ld1.f09_f09_mg17.FW2000climo.cheyenne_intel.cam-outfrq1d (Overall: NLFAIL) details:
+  FAIL SMS_Ld1.f09_f09_mg17.FW2000climo.cheyenne_intel.cam-outfrq1d NLCOMP
+SMS_Ld1.ne30pg3_ne30pg3_mg17.FC2010climo.cheyenne_intel.cam-outfrq1d (Overall: DIFF) details:
+  FAIL SMS_Ld1.ne30pg3_ne30pg3_mg17.FC2010climo.cheyenne_intel.cam-outfrq1d NLCOMP
+  FAIL SMS_Ld1.ne30pg3_ne30pg3_mg17.FC2010climo.cheyenne_intel.cam-outfrq1d BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_033: DIFF
+SMS_Ld5.f09_f09_mg17.PC6.cheyenne_intel.cam-cam6_port_f09 (Overall: NLFAIL) details:
+  FAIL SMS_Ld5.f09_f09_mg17.PC6.cheyenne_intel.cam-cam6_port_f09 NLCOMP
+SMS_Lm13.f10_f10_mg37.F2000climo.cheyenne_intel.cam-outfrq1m (Overall: NLFAIL) details:
+  FAIL SMS_Lm13.f10_f10_mg37.F2000climo.cheyenne_intel.cam-outfrq1m NLCOMP
+SMS_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-nudging (Overall: NLFAIL) details:
+  FAIL SMS_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-nudging NLCOMP
+SMS_Ln9.f09_f09_mg17.FW1850.cheyenne_intel.cam-reduced_hist3s (Overall: NLFAIL) details:
+  FAIL SMS_Ln9.f09_f09_mg17.FW1850.cheyenne_intel.cam-reduced_hist3s NLCOMP
+SMS_Ln9.f19_f19.F2000climo.cheyenne_intel.cam-silhs (Overall: NLFAIL) details:
+  FAIL SMS_Ln9.f19_f19.F2000climo.cheyenne_intel.cam-silhs NLCOMP
+
+izumi/nag: PASS except:
+050 bl426 TBL.sh f10c4aqwmxdm outfrq3s_newyear 9s .............................................FAIL! rc= 7 at Tue Jun 30 19:33:33 MDT 2020
+060 bl700 TBL.sh h5adicdm outfrq3s_bwic 9s ....................................................FAIL! rc= 7 at Tue Jun 30 19:55:18 MDT 2020
+064 bl702 TBL.sh h5.3adicdm outfrq3s_bwic 9s ..................................................FAIL! rc= 7 at Tue Jun 30 19:58:02 MDT 2020
+069 bl711 TBL.sh h5c5aqt5mdm ttrac 9s .........................................................FAIL! rc= 7 at Tue Jun 30 20:08:59 MDT 2020
+075 bl720 TBL.sh h16c4aqdm outfrq3s+aquaplanet_cam4 9s ........................................FAIL! rc= 7 at Tue Jun 30 20:17:36 MDT 2020
+078 bl721 TBL.sh h16.3c4aqdm outfrq3s+aquaplanet_cam4 9s ......................................FAIL! rc= 7 at Tue Jun 30 20:23:08 MDT 2020
+
+izumi/pgi: PASS except:
+026 bl704 TBL.sh h5.4addm outfrq3s 9s .........................................................FAIL! rc= 4 at Tue Jun 30 20:34:10 MDT 2020
+031 bl707 TBL.sh h5.2addm outfrq3s 9s .........................................................FAIL! rc= 7 at Tue Jun 30 21:16:17 MDT 2020
+034 bl712 TBL.sh h5c5aqbamdm outfrq3s+aquaplanet_cam5 9s ......................................FAIL! rc= 7 at Tue Jun 30 21:29:27 MDT 2020
+
+All NLCOMP tests fail due to new namelist variables for dry air species and
+water species in air.  The SE tests have additional changes to namelist variables.
+
+All SE baselines fail due to SE answer changes.
+
+All WACCM-X baselines fail due to update calculation of variable dry air properties.
+
+CAM tag used for the baseline comparison tests if different than previous
+tag:
+
+Summarize any changes to answers: 
+
+. WACCM-X changes answers due to roundoff level change in the air properties
+  introduced by new physconst code.
+
+. All SE configurations change answers due to dycore updates.
+
+===============================================================
+===============================================================
+
+Tag name: cam6_2_033
+Originator(s): fvitt, tilmes, rebecca.schwantes@noaa.gov
+Date: 25 Jun 2020
+One-line Summary: Chemistry updates
+Github PR URL: https://github.com/ESCOMP/CAM/pull/155
+
+Purpose of changes (include the issue number and title text for each relevant GitHub issue):
+
+- update TS1 mechanism in CAM-Chem compsets (Chemistry updates and new compset for TS2.1 chemical mechanism #128)
+- add TS2 chemistry mechanism (#128)
+- add new compsets:
+     FCts2SD (TS2)
+     FCts2nudged (TS2)
+     FCnudged (TS1)
+- turn on aerosol convective processes for CAM-Chem compsets
+- add support for ne30np4, ne30pg3, and ne0np4CONUS.ne30x8 grids
+- correct rates_sums diagnostics (Update reaction rate sums diagnostics for CAM-Chem and WACCM compsets #113)
+- update solar forcing file (Need to update solar forcing file #156)
+
+Describe any changes made to build system:
+
+ Utility function get_species_nottranported_list has been added to ChemPreprocess.pm
+ which returns a list of chemical species not transported.  This list is used to exclude
+ chemical species that are not transported from the lists of species that undergo wet
+ and dry deposition.
+
+Describe any changes made to the namelist:
+
+List any changes to the defaults for the boundary datasets:
+
+Describe any substantial timing or memory changes:
+
+Code reviewed by: CAM code review team
+
+List all files eliminated:
+
+List all files added and what they do:
+
+A	bld/namelist_files/use_cases/hist_trop_strat_nudged_cam6.xml
+ - for physics nudging to offline meteorology (both TS1 and TS2)
+
+A	bld/namelist_files/use_cases/sd_trop_strat2_cam6.xml
+ - for FV dycore specified dynamics (TS2 chemistry)
+
+A	src/chemistry/pp_trop_strat_mam4_ts2/chem_mech.doc
+A	src/chemistry/pp_trop_strat_mam4_ts2/chem_mech.in
+A	src/chemistry/pp_trop_strat_mam4_ts2/chem_mods.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/m_rxt_id.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/m_spc_id.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_adjrxt.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_exp_sol.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_imp_sol.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_indprd.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_lin_matrix.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_lu_factor.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_lu_solve.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_nln_matrix.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_phtadj.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_prod_loss.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_rxt_rates_conv.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_setrxt.F90
+A	src/chemistry/pp_trop_strat_mam4_ts2/mo_sim_dat.F90
+ - new TS2 chemisty mechanism (rebecca.schwantes@noaa.gov)
+
+List all existing files that have been modified, and describe the changes:
+
+M	.gitignore
+ - ignore external src/atmos_phys
+
+M	Externals.cfg
+ - update cime tag to use require updates to dry deposition data
+ - update clm tag for support of ne30np4 grid
+
+M	bld/build-namelist
+ - add default settings of convproc options for CAM-Chem
+ - default emissions to support TS2 chem
+ - default megan emissions for TS1 and TS2 chem
+
+M	bld/config_files/definition.xml
+M	bld/configure
+ - new chem option trop_strat_mam4_ts2
+
+M	bld/namelist_files/master_gas_drydep_list.xml
+M	bld/namelist_files/master_gas_wetdep_list.xml
+ - add species to master lists
+
+M	bld/namelist_files/namelist_defaults_cam.xml
+ - new IC files to support ne30 and CONUS grids
+ - lght_no_prd_factor for ne30 and CONUS grids
+ - default emis for ne30 grid
+ - dust_emis_fact for ne30 and CONUS grids
+ - update rxn_rates_sums defaults
+
+M	bld/namelist_files/use_cases/1950-2010_ccmi_refc1_waccmx_ma.xml
+M	bld/namelist_files/use_cases/waccmxie_ma_2000_cam4.xml
+ - remove unused rxn_rate_sums
+
+M	bld/namelist_files/use_cases/2000_trop_strat_vbs_cam6.xml
+M	bld/namelist_files/use_cases/waccm_tsmlt_1850_cam6.xml
+M	bld/namelist_files/use_cases/waccm_tsmlt_2000_cam6.xml
+M	bld/namelist_files/use_cases/waccm_tsmlt_2010_cam6.xml
+M	bld/namelist_files/use_cases/sd_waccm_tsmlt_cam6.xml
+M	bld/namelist_files/use_cases/sd_waccmx_ma_cam4.xml
+M	bld/namelist_files/use_cases/sd_trop_strat_vbs_cam6.xml
+M	bld/namelist_files/use_cases/waccmx_ma_hist_cam6.xml
+ - include additional rate sums diagnostics in fincl lists
+
+M	bld/namelist_files/use_cases/2010_trop_strat_vbs_cam6.xml
+ - add support for ne30 grids
+ - include additional rate sums diagnostics in fincl lists
+
+M	bld/namelist_files/use_cases/hist_cam6.xml
+M	bld/namelist_files/use_cases/waccm_ma_hist_cam6.xml
+M	bld/namelist_files/use_cases/waccm_sc_hist_cam6.xml
+ - update solar forcing file
+
+M	bld/namelist_files/use_cases/hist_trop_strat_vbs_cam6.xml
+M	bld/namelist_files/use_cases/hist_trop_strat_vbsext_cam6.xml
+M	bld/namelist_files/use_cases/hist_trop_strat_vbsfire_cam6.xml
+M	bld/namelist_files/use_cases/waccm_tsmlt_hist_cam6.xml
+ - update solar forcing file
+ - include additional rate sums diagnostics in fincl lists
+
+M	bld/perl5lib/Build/ChemNamelist.pm
+M	bld/perl5lib/Build/ChemPreprocess.pm
+ - dep lists cannot include species that are not transported
+
+M	cime_config/buildcpp
+ - override EPS_AAREA error tolerance for refined grids
+
+M	cime_config/config_component.xml
+M	cime_config/config_compsets.xml
+ - add TS2 and nudged compsets
+
+M	cime_config/testdefs/testlist_cam.xml
+ - add tests for supported grids
+
+M	cime_config/testdefs/testmods_dirs/cam/outfrq1d_refined_camchem/shell_commands
+M	cime_config/testdefs/testmods_dirs/cam/outfrq9s_refined_camchem/shell_commands
+ - remove EPS_AAREA settings
+
+M	src/chemistry/mozart/mo_chm_diags.F90
+M	src/chemistry/mozart/mo_gas_phase_chemdr.F90
+M	src/chemistry/mozart/mo_neu_wetdep.F90
+M	src/chemistry/mozart/mo_usrrxt.F90
+ - changes to support TS2 chem
+
+M	src/chemistry/pp_trop_strat_mam4_vbs/chem_mech.doc
+M	src/chemistry/pp_trop_strat_mam4_vbs/chem_mech.in
+M	src/chemistry/pp_trop_strat_mam4_vbs/chem_mods.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/m_rxt_id.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/m_spc_id.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_adjrxt.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_indprd.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_lin_matrix.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_lu_factor.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_lu_solve.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_nln_matrix.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_phtadj.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_prod_loss.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_rxt_rates_conv.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_setrxt.F90
+M	src/chemistry/pp_trop_strat_mam4_vbs/mo_sim_dat.F90
+ - updates to TS1 chem
+
+M	src/chemistry/utils/tracer_data.F90
+ - correction to error message
+
+If there were any failures reported from running test_driver.sh on any test
+platform, and checkin with these failures has been OK'd by the gatekeeper,
+then copy the lines from the td.*.status files for the failed tests to the
+appropriate machine below.  All failed tests must be justified.
+
+cheyenne/intel:
+013 bl353 TBL.sh f1.9c4aqmozdh outfrq3s+2000_cam4_trop_chem 9s ................................FAIL! rc= 7 at Wed Jun 24 09:17:01 MDT 2020
+015 bl360 TBL.sh f1.9c5aqm volc+1850-2005_cam5 2d .............................................FAIL! rc= 7 at Wed Jun 24 09:19:04 MDT 2020
+017 bl370 TBL.sh f1.9c6aqtsvbsdh outfrq3s+2000_trop_strat_vbs_cam6 9s .........................FAIL! rc= 7 at Wed Jun 24 09:27:55 MDT 2020
+020 bl380 TBL.sh f1.9c6aqcdh outfrq3s_cosp 9s .................................................FAIL! rc= 7 at Wed Jun 24 09:37:36 MDT 2020
+023 bl390 TBL.sh f1.9c4aqwmxdh outfrq3s+waccmx_ma_2000_cam4 9s ................................FAIL! rc= 7 at Wed Jun 24 09:59:42 MDT 2020
+026 bl391 TBL.sh f1.9c4aqwmxidh outfrq3s 9s ...................................................FAIL! rc= 7 at Wed Jun 24 10:17:33 MDT 2020
+032 bl735 TBL.sh h16c5aqdm outfrq3s+1850-2005_cam5 9s .........................................FAIL! rc= 7 at Wed Jun 24 10:25:09 MDT 2020
+035 bl742 TBL.sh h16.3c6aqt5dm outfrq3s+hist_cam6 9s ..........................................FAIL! rc= 7 at Wed Jun 24 10:40:29 MDT 2020
+
+ - expcected baseline failures due to change in chemical tracer deposition
+
+cheyenne/intel/aux_cam:
+  ERP_D_Ln9.f09_f09_mg17.QSC6.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL ERP_D_Ln9.f09_f09_mg17.QSC6.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL ERP_D_Ln9.f09_f09_mg17.QSC6.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERP_D_Ln9.f19_f19_mg17.QPC6.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL ERP_D_Ln9.f19_f19_mg17.QPC6.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL ERP_D_Ln9.f19_f19_mg17.QPC6.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERP_Ld3.f09_f09_mg17.FWHIST.cheyenne_intel.cam-reduced_hist1d (Overall: DIFF) details:
+    FAIL ERP_Ld3.f09_f09_mg17.FWHIST.cheyenne_intel.cam-reduced_hist1d NLCOMP
+    FAIL ERP_Ld3.f09_f09_mg17.FWHIST.cheyenne_intel.cam-reduced_hist1d BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERP_Lh12.f19_f19_mg17.FW4madSD.cheyenne_intel.cam-outfrq3h (Overall: DIFF) details:
+    FAIL ERP_Lh12.f19_f19_mg17.FW4madSD.cheyenne_intel.cam-outfrq3h NLCOMP
+    FAIL ERP_Lh12.f19_f19_mg17.FW4madSD.cheyenne_intel.cam-outfrq3h BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: ERROR BFAIL baseline directory '/glade/p/cesm/amwg/cesm_baselines/cam6_2_032/ERP_Lh12.f19_f19_mg17.FW4madSD.cheyenne_intel.cam-outfrq3h' does not exist
+  ERP_Ln9.f09_f09_mg17.F1850.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL ERP_Ln9.f09_f09_mg17.F1850.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL ERP_Ln9.f09_f09_mg17.F1850.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s_mg3 (Overall: DIFF) details:
+    FAIL ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s_mg3 NLCOMP
+    FAIL ERP_Ln9.f09_f09_mg17.F2000climo.cheyenne_intel.cam-outfrq9s_mg3 BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERP_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL ERP_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL ERP_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERP_Ln9.f09_f09_mg17.FHIST_BDRD.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL ERP_Ln9.f09_f09_mg17.FHIST_BDRD.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL ERP_Ln9.f09_f09_mg17.FHIST_BDRD.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERP_Ln9.f19_f19_mg17.FWsc1850.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL ERP_Ln9.f19_f19_mg17.FWsc1850.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL ERP_Ln9.f19_f19_mg17.FWsc1850.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERP_Ln9.ne30pg3_ne30pg3_mg17.FW2000climo.cheyenne_intel.cam-outfrq9s_wcm_ne30 (Overall: DIFF) details:
+    FAIL ERP_Ln9.ne30pg3_ne30pg3_mg17.FW2000climo.cheyenne_intel.cam-outfrq9s_wcm_ne30 NLCOMP
+    FAIL ERP_Ln9.ne30pg3_ne30pg3_mg17.FW2000climo.cheyenne_intel.cam-outfrq9s_wcm_ne30 BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERS_Ln9.f09_f09_mg17.FX2000.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL ERS_Ln9.f09_f09_mg17.FX2000.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL ERS_Ln9.f09_f09_mg17.FX2000.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERS_Ln9.f19_f19_mg17.FXSD.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL ERS_Ln9.f19_f19_mg17.FXSD.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL ERS_Ln9.f19_f19_mg17.FXSD.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  ERS_Ln9.ne0TESTONLYne5x4_ne0TESTONLYne5x4_mg37.FADIAB.cheyenne_intel.cam-outfrq3s_refined (Overall: NLFAIL) details:
+    FAIL ERS_Ln9.ne0TESTONLYne5x4_ne0TESTONLYne5x4_mg37.FADIAB.cheyenne_intel.cam-outfrq3s_refined NLCOMP
+  SMS_D_Ln9.f09_f09_mg17.FCts2nudged.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL SMS_D_Ln9.f09_f09_mg17.FCts2nudged.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL SMS_D_Ln9.f09_f09_mg17.FCts2nudged.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: ERROR BFAIL baseline directory '/glade/p/cesm/amwg/cesm_baselines/cam6_2_032/SMS_D_Ln9.f09_f09_mg17.FCts2nudged.cheyenne_intel.cam-outfrq9s' does not exist
+  SMS_D_Ln9.f09_f09_mg17.FCvbsxHIST.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL SMS_D_Ln9.f09_f09_mg17.FCvbsxHIST.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL SMS_D_Ln9.f09_f09_mg17.FCvbsxHIST.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  SMS_D_Ln9.f09_f09_mg17.FSD.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL SMS_D_Ln9.f09_f09_mg17.FSD.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL SMS_D_Ln9.f09_f09_mg17.FSD.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  SMS_D_Ln9.f19_f19_mg17.FWma2000climo.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL SMS_D_Ln9.f19_f19_mg17.FWma2000climo.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL SMS_D_Ln9.f19_f19_mg17.FWma2000climo.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  SMS_D_Ln9.f19_f19_mg17.FXHIST.cheyenne_intel.cam-outfrq9s_amie (Overall: DIFF) details:
+    FAIL SMS_D_Ln9.f19_f19_mg17.FXHIST.cheyenne_intel.cam-outfrq9s_amie NLCOMP
+    FAIL SMS_D_Ln9.f19_f19_mg17.FXHIST.cheyenne_intel.cam-outfrq9s_amie BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  SMS_D_Ln9.ne0CONUSne30x8_ne0CONUSne30x8_mt12.FCHIST.cheyenne_intel.cam-outfrq9s_refined_camchem (Overall: DIFF) details:
+    FAIL SMS_D_Ln9.ne0CONUSne30x8_ne0CONUSne30x8_mt12.FCHIST.cheyenne_intel.cam-outfrq9s_refined_camchem NLCOMP
+    FAIL SMS_D_Ln9.ne0CONUSne30x8_ne0CONUSne30x8_mt12.FCHIST.cheyenne_intel.cam-outfrq9s_refined_camchem BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  SMS_D_Ln9.ne30_ne30_mg17.FCnudged.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL SMS_D_Ln9.ne30_ne30_mg17.FCnudged.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL SMS_D_Ln9.ne30_ne30_mg17.FCnudged.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: ERROR BFAIL baseline directory '/glade/p/cesm/amwg/cesm_baselines/cam6_2_032/SMS_D_Ln9.ne30_ne30_mg17.FCnudged.cheyenne_intel.cam-outfrq9s' does not exist
+  SMS_D_Ln9.T42_T42.FSCAM.cheyenne_intel.cam-outfrq9s (Overall: DIFF) details:
+    FAIL SMS_D_Ln9.T42_T42.FSCAM.cheyenne_intel.cam-outfrq9s NLCOMP
+    FAIL SMS_D_Ln9.T42_T42.FSCAM.cheyenne_intel.cam-outfrq9s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  SMS_Ld1.f09_f09_mg17.FW2000climo.cheyenne_intel.cam-outfrq1d (Overall: DIFF) details:
+    FAIL SMS_Ld1.f09_f09_mg17.FW2000climo.cheyenne_intel.cam-outfrq1d NLCOMP
+    FAIL SMS_Ld1.f09_f09_mg17.FW2000climo.cheyenne_intel.cam-outfrq1d BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  SMS_Ld1.ne30pg3_ne30pg3_mg17.FC2010climo.cheyenne_intel.cam-outfrq1d (Overall: DIFF) details:
+    FAIL SMS_Ld1.ne30pg3_ne30pg3_mg17.FC2010climo.cheyenne_intel.cam-outfrq1d NLCOMP
+    FAIL SMS_Ld1.ne30pg3_ne30pg3_mg17.FC2010climo.cheyenne_intel.cam-outfrq1d BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: ERROR BFAIL baseline directory '/glade/p/cesm/amwg/cesm_baselines/cam6_2_032/SMS_Ld1.ne30pg3_ne30pg3_mg17.FC2010climo.cheyenne_intel.cam-outfrq1d' does not exist
+  SMS_Ld5.f09_f09_mg17.PC6.cheyenne_intel.cam-cam6_port_f09 (Overall: DIFF) details:
+    FAIL SMS_Ld5.f09_f09_mg17.PC6.cheyenne_intel.cam-cam6_port_f09 NLCOMP
+    FAIL SMS_Ld5.f09_f09_mg17.PC6.cheyenne_intel.cam-cam6_port_f09 BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: FIELDLIST field lists differ (otherwise bit-for-bit)
+  SMS_Lm13.f10_f10_mg37.F2000climo.cheyenne_intel.cam-outfrq1m (Overall: DIFF) details:
+    FAIL SMS_Lm13.f10_f10_mg37.F2000climo.cheyenne_intel.cam-outfrq1m NLCOMP
+    FAIL SMS_Lm13.f10_f10_mg37.F2000climo.cheyenne_intel.cam-outfrq1m BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  SMS_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-nudging (Overall: DIFF) details:
+    FAIL SMS_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-nudging NLCOMP
+    FAIL SMS_Ln9.f09_f09_mg17.F2010climo.cheyenne_intel.cam-nudging BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  SMS_Ln9.f09_f09_mg17.FW1850.cheyenne_intel.cam-reduced_hist3s (Overall: DIFF) details:
+    FAIL SMS_Ln9.f09_f09_mg17.FW1850.cheyenne_intel.cam-reduced_hist3s NLCOMP
+    FAIL SMS_Ln9.f09_f09_mg17.FW1850.cheyenne_intel.cam-reduced_hist3s BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+  SMS_Ln9.f19_f19.F2000climo.cheyenne_intel.cam-silhs (Overall: DIFF) details:
+    FAIL SMS_Ln9.f19_f19.F2000climo.cheyenne_intel.cam-silhs NLCOMP
+    FAIL SMS_Ln9.f19_f19.F2000climo.cheyenne_intel.cam-silhs BASELINE /glade/p/cesm/amwg/cesm_baselines/cam6_2_032: DIFF
+
+ - namelist compare failures are due to changes in tracer deposition lists and update to solar forcing file
+ - baseline failures are due to changes in chemical tracer deposition
+ - baseline failures to CAM-Chem compsets (FC*) are also due the mechanism updates
+
+izumi/nag:
+005 bl111 TBL.sh e8c5aqt5mdm ghgrmp_e8 9s .....................................................FAIL! rc= 7 at Tue Jun 23 20:06:08 MDT 2020
+017 bl311 TBL.sh f10c5aqt5mdm ttrac 9s ........................................................FAIL! rc= 7 at Tue Jun 23 20:06:10 MDT 2020
+024 bl317 TBL.sh f10c5aqcdm outfrq3s_cosp 9s ..................................................FAIL! rc= 7 at Tue Jun 23 20:06:11 MDT 2020
+027 bl318 TBL.sh f10c6aqcdm sat_hist 9s .......................................................FAIL! rc= 7 at Tue Jun 23 20:06:13 MDT 2020
+030 bl325 TBL.sh f10c5aqscdm outfrq3s_subcol 9s ...............................................FAIL! rc= 7 at Tue Jun 23 20:06:14 MDT 2020
+036 bl338 TBL.sh f10c5aqdm rad_diag_mam 9s ....................................................FAIL! rc= 7 at Tue Jun 23 20:06:15 MDT 2020
+039 bl367 TBL.sh f10c6aqdm outfrq3s_convmic 9s ................................................FAIL! rc= 7 at Tue Jun 23 20:06:16 MDT 2020
+042 bl368 TBL.sh f10c6aqdm outfrq3s 9s ........................................................FAIL! rc= 7 at Tue Jun 23 20:06:17 MDT 2020
+045 bl369 TBL.sh f10c6aqdm outfrq3s_am 9s .....................................................FAIL! rc= 7 at Tue Jun 23 20:06:18 MDT 2020
+047 bl381 TBL.sh f0.9c6aqccdm outfrq3s+hist_cam6 3s ...........................................FAIL! rc= 7 at Tue Jun 23 20:19:35 MDT 2020
+050 bl426 TBL.sh f10c4aqwmxdm outfrq3s_newyear 9s .............................................FAIL! rc= 7 at Tue Jun 23 20:19:38 MDT 2020
+053 bl430 TBL.sh f10c5aqcmtt1dm outfrq3s_carma 9s .............................................FAIL! rc= 7 at Tue Jun 23 20:19:42 MDT 2020
+056 bl471 TBL.sh f10c6aqwmadm outfrq3s 9s .....................................................FAIL! rc= 7 at Tue Jun 23 20:19:46 MDT 2020
+069 bl711 TBL.sh h5c5aqt5mdm ttrac 9s .........................................................FAIL! rc= 7 at Tue Jun 23 20:19:48 MDT 2020
+
+ - baseline failures are due to changes in chemical tracer deposition
+
+izumi/pgi:
+011 bl222 TBL.sh f10spmaqdm outfrq3s 9s .......................................................FAIL! rc= 7 at Tue Jun 23 20:06:54 MDT 2020
+020 bl334 TBL.sh f10c5aqudm outfrq3s 9s .......................................................FAIL! rc= 7 at Tue Jun 23 20:06:56 MDT 2020
+
+ - baseline failures are due to changes in chemical tracer deposition
+
+ NOTE: The data (Henry's Law constants) controlling the dry deposition of gases is being updated.
+  In CAM this affects only DMS and SO2 and has minimal impact on the distributions of those species,
+  thus should not impact aerosols noticeably.
+
+Summarize any changes to answers: larger than roundoff but same climate
+
+===============================================================
+===============================================================
+
+Tag name: cam6_2_032
+Originator(s): fvitt
+Date: 9 Jun 2020
+One-line Summary: WACCM-X compsets for CESM2.2
+Github PR URL: https://github.com/ESCOMP/CAM/pull/144
+
+Purpose of changes (include the issue number and title text for each relevant GitHub issue):
+>>>>>>> 3a585ae1... Merge pull request #153 from brian-eaton/se_dev
 
 Purpose of changes:
 

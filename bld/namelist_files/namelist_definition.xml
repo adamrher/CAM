@@ -6745,18 +6745,35 @@ Default: None.
 </entry>
 
 <!-- SE dycore -->
-
-<entry id="se_qsize_condensate_loading" type="integer" category="se"
-       group="dyn_se_inparm" valid_values="1,2,3,4,5,6" >
-Number of water tracers active in condensate-loading terms in dynamical core
-1: water vapor only
-2: water vapor and cloud liquid
-3: water vapor, cloud liquid and cloud ice
-4: water vapor, cloud liquid, cloud ice and rain
-5: water vapor, cloud liquid, cloud ice, rain and snow
-6: water vapor, cloud liquid, cloud ice, rain, snow and graupel
-Default: 3 for CAM4, CAM5; 5 for CAM6; 1 for Held_Suarez, Adiabatic and Kessler
+<entry id="apply_lunar_tides" type="logical" category="waccm_phys"
+       group="lunar_tides_opts" valid_values="" >
+Switch to apply lunar tidal tendencies to neutral winds.
+Default: FALSE
 </entry>
+
+<!-- Dry air major species -->
+
+<entry id="dry_air_species" type="char*6(20)"  category="physconst"
+       group="air_composition_nl" valid_values="" >
+List of major species of dry air.  If not set then the composition of dry
+air is considered fixed at tropospheric conditions and the properties of
+dry air are constant.  If set then the list of major species is assumed to
+have 'N2' listed last.  This information is currently used only for
+computing the variable properties of air in WACCM-X configurations.
+Default: Set by build-namelist.
+</entry>
+
+<!-- Water species in moist air -->
+
+<entry id="water_species_in_air" type="char*6(20)"  category="physconst"
+       group="air_composition_nl" valid_values="" >
+List of water species that are included in "moist" air.  This is currently
+used only by the SE dycore to generalize the computation of the moist air
+mass and thermodynamic properties.
+Default: Set by build-namelist.
+</entry>
+
+<!-- SE dycore -->
 
 <entry id="se_fine_ne" type="integer" category="se"
        group="dyn_se_inparm" valid_values="" >
@@ -6798,6 +6815,49 @@ Default: 0 (i.e., not used)
        group="dyn_se_inparm" valid_values="" >
 Number of hyperviscosity subcycles per dynamics timestep.
 Default: Set by build-namelist
+</entry>
+
+<entry id="se_hypervis_subcycle_sponge" type="integer" category="se"
+       group="dyn_se_inparm" valid_values="" >
+Number of hyperviscosity subcycles per dynamics timestep in sponge del2 diffusion.
+Default: Set by build-namelist
+</entry>
+
+
+<entry id="se_rayk0" type="integer" category="se"
+       group="dyn_se_inparm" valid_values="" >
+Variable to specify the vertical index at which the
+Rayleigh friction term is centered (the peak value).
+Default: 2
+</entry>
+
+<entry id="se_raykrange" type="real" category="se"
+       group="dyn_se_inparm" valid_values="" >
+Rayleigh friction parameter to determine the width of the profile.  If set
+to 0 then a width is chosen by the algorithm (see rayleigh_friction.F90).
+Default: 0.5.
+</entry>
+
+<entry id="se_raytau0" type="real" category="se"
+       group="dyn_se_inparm" valid_values="" >
+Rayleigh friction parameter to determine the approximate value of the decay
+time (days) at model top.  If 0.0 then no Rayleigh friction is applied.
+Default: 0.
+</entry>
+
+<entry id="se_molecular_diff" type="real" category="se"
+       group="dyn_se_inparm" valid_values="" >
+Used by SE dycore to apply sponge layer diffusion to u, v, and T for
+stability of WACCM configurations. The diffusion is modeled on 3D molecular
+diffusion and thermal conductivity by using actual molecular diffusion and
+thermal conductivity coefficients multiplied by the value of
+se_molecular_diff.
+
+If set &lt;= 0.0 then the code is not activated.  If set &gt; 0.0 then
+the molecular diffusion and thermal conductivity coefficients will be
+multiplied by a factor of se_molecular_diff.
+
+Default: 0.
 </entry>
 
 <entry id="se_hypervis_subcycle_q" type="integer" category="se"
@@ -7002,6 +7062,53 @@ CAM-SE vertical remap algorithm
 2: PPM vertical remap without mirroring at the boundaries
    (no bc's enforced, first-order at two cells bordering top and bottom
    boundaries)
+<entry id="se_vert_remap_T" type="char*32" category="se"
+       group="dyn_se_inparm" valid_values="thermal_energy_over_P,Tv_over_logP">
+CAM-SE vertical remapping of temperature:
+"thermal_energy_over_P": Map cp*T (thermal energy conserving) using a
+                         pressure coordinate.
+"Tv_over_logP"         : Map virtual temperature using a log pressure coordinate.
+
+Default: Set by build-namelist.
+</entry>
+
+<entry id="se_vert_remap_uvTq_alg" type="char*32" category="se"
+       group="dyn_se_inparm" valid_values="PPM_bc_mirror,PPM_bc_PCoM,PPM_bc_linear_extrapolation,FV3_PPM,FV3_CS,FV3_CS_2dz_filter,FV3_non_monotone_CS_2dz_filter">
+CAM-SE vertical remap algorithm for u,v,T, and water species.
+PPM_bc_mirror: PPM vertical remap with mirroring at the boundaries
+     (solid wall boundary conditions, high-order throughout)
+PPM_bc_PCoM: PPM vertical remap without mirroring at the boundaries
+     (no boundary conditions enforced, first-order at two cells bordering top and bottom
+     boundaries)
+PPM_bc_linear_extrapolation: PPM with linear extrapolation in ghost cells (code from A. Bradley, DOE)
+
+The following options use the FV3 vertical remapping algorithm.
+     
+FV3_PPM: Monotone PPM
+FV3_CS: Monotonic cubic spline with 2*delta_z oscillations removed
+FV3_CS_2dz_filter: Selectively monotonic cubic spline, where local extrema are retained,
+     with 2*delta_z oscillations removed
+FV3_non_monotone_CS_2dz_filter: Non-monotonic (linear) cubic spline with 2*delta_z oscillations removed;
+
+Default: Set by build-namelist.
+</entry>
+
+<entry id="se_vert_remap_tracer_alg" type="char*32" category="se"
+       group="dyn_se_inparm" valid_values="PPM_bc_mirror,PPM_bc_PCoM,PPM_bc_linear_extrapolation,FV3_PPM,FV3_CS,FV3_non_monotone_CS_2dz_filter">
+CAM-SE vertical remap algorithm for non-water tracers
+PPM_bc_mirror: PPM vertical remap with mirroring at the boundaries
+     (solid wall boundary conditions, high-order throughout)
+PPM_bc_PCoM: PPM vertical remap without mirroring at the boundaries
+     (no boundary conditions enforced, first-order at two cells bordering top and bottom
+     boundaries)
+PPM_bc_linear_extrapolation: PPM with linear extrapolation in ghost cells (code from A. Bradley, DOE)
+
+The following options use the FV3 vertical remapping algorithm.
+     
+FV3_PPM: Monotone PPM
+FV3_CS: Monotonic cubic spline with 2*delta_z oscillations removed
+FV3_non_monotone_CS_2dz_filter: Non-monotonic (linear) cubic spline with 2*delta_z oscillations removed;
+
 Default: Set by build-namelist.
 </entry>
 
