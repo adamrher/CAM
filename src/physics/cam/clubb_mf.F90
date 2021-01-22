@@ -75,8 +75,8 @@ module clubb_mf
 
   end subroutine clubb_mf_readnl
 
-  subroutine integrate_mf( nz,      dzt,     zm,      p_zm,      iexner_zm,         & ! input
-                                             rho_zt,  p_zt,      iexner_zt,         & ! input
+  subroutine integrate_mf( nz,      dzm,     zm,      p_zm,      iexner_zm,         & ! input
+                           rho_zt,  dzt,     zt,      p_zt,      iexner_zt,         & ! input
                            u,       v,       thl,     qt,        thv,               & ! input
                                              th,      qv,        qc,                & ! input
                                              thl_zm,  qt_zm,                        & ! input
@@ -129,12 +129,13 @@ module clubb_mf
                                             thl,    thv,          & ! thermodynamic grid
                                             th,     qv,           & ! thermodynamic grid
                                             qt,     qc,           & ! thermodynamic grid
-                                            dzt,    rho_zt,       & ! thermodynamic grid
+                                            rho_zt,               & ! thermodynamic grid
+                                            dzt,    zt,           & ! thermodynamic grid
                                             p_zt,   iexner_zt,    & ! thermodynamic grid
                                             thl_zm,               & ! momentum grid
                                             th_zm,  qv_zm,        &
                                             qt_zm,  qc_zm,        & ! momentum grid
-                                            zm,                   & ! momentum grid
+                                            dzm,    zm,           & ! momentum grid
                                             p_zm,   iexner_zm       ! momentum grid
 
      real(r8), intent(in)                :: wthl,wqt
@@ -163,7 +164,6 @@ module clubb_mf
      real(r8), dimension(nz)              :: moist_th,   dry_th,      & ! momentum grid
                                              awqc,                    & ! momentum grid                     
                                              awthl_conv, awqt_conv,   & ! momentum grid
-                                             thl_env_zm, qt_env_zm,   & ! momentum grid
                                              thl_env,    qt_env         ! thermodynamic grid
      !
      ! updraft properties
@@ -243,9 +243,6 @@ module clubb_mf
      ! fixed entrainment rate (debug only)
      real(r8),parameter                   :: fixent = 0.004_r8
      !
-     ! to upwind (stagger environ values)
-     logical                              :: pupwind = .true.
-     !
      ! to scale surface fluxes
      logical                              :: scalesrf = .false. 
      !
@@ -289,6 +286,7 @@ module clubb_mf
      qtflx     = 0._r8
      thflx     = 0._r8
      qvflx     = 0._r8
+     qcflx     = 0._r8
 
      ent       = 0._r8
      entf      = 0._r8
@@ -335,7 +333,7 @@ module clubb_mf
          ! get entrainment coefficient, dz/L0
          do i=1,clubb_mf_nup
            do k=1,nz
-             entf(k,i) = dzt(k) / clubb_mf_L0
+             entf(k,i) = dzm(k) / clubb_mf_L0
            enddo
          enddo
 
@@ -345,7 +343,7 @@ module clubb_mf
          ! get entrainment, ent=ent0/dz*P(dz/L0)
          do i=1,clubb_mf_nup
            do k=1,nz
-             ent(k,i) = real( enti(k,i))*clubb_mf_ent0/dzt(k)
+             ent(k,i) = real( enti(k,i))*clubb_mf_ent0/dzm(k)
            enddo
          enddo
 
@@ -391,13 +389,13 @@ module clubb_mf
              srfarea = srfarea+upa(1,i)
          end do
 
-         if ( (srfwqtu .gt. srfarea*wqt) .and. (wqt .gt. 0._r8)) then
+         !if ( (srfwqtu .gt. srfarea*wqt) .and. (wqt .gt. 0._r8)) then
              facqtu=srfarea*wqt/srfwqtu
-         endif
+         !endif
 
-         if ( srfwthvu .gt. srfarea*wthv) then
+         !if ( srfwthvu .gt. srfarea*wthv) then
              facthvu=srfarea*wthv/srfwthvu
-         endif
+         !endif
 
          if (debug) then
            if ( masterproc ) then
@@ -408,19 +406,20 @@ module clubb_mf
 
        do i=1,clubb_mf_nup
 
-         if (pupwind) then
-           betaqt = (qt(4)-qt(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-           betathl = (thv(4)-thv(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+         betaqt = (qt(4)-qt(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+         if (betaqt*0.5_r8*(dzt(2)+dzt(1)) .le. qt(2)) then
            upqt(1,i)= qt(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))+facqtu*upqt(1,i)
-           upthv(1,i)= thv(2)-betathl*0.5_r8*(dzt(2)+dzt(1))+facthvu*upthv(1,i)
          else
-           upqt(1,i)=qt(1)+facqtu*upqt(1,i)
-           upthv(1,i)=thv(1)+facthvu*upthv(1,i)
+           upqt(1,i)= qt(1)+facqtu*upqt(1,i)
          end if
+
+         betathl = (thv(4)-thv(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+         upthv(1,i)= thv(2)-betathl*0.5_r8*(dzt(2)+dzt(1))+facthvu*upthv(1,i)
+
          upthl(1,i) = upthv(1,i) / (1._r8+zvir*upqt(1,i))
          upth(1,i)  = upthl(1,i)
 
-         ! get cloud, lowest momentum level 
+         ! get cloud, lowest thermodynamic level (assume it has properties of lowest momentum level) 
          if (do_condensation) then
            call condensation_mf(upqt(1,i), upthl(1,i), p_zm(1), iexner_zm(1), &
                                 thvn, qcn, thn, qln, qin, qsn, lmixn)
@@ -437,40 +436,40 @@ module clubb_mf
          end if
        end do
 
-       ! get updraft properties
+       ! get updraft properties 
        do i=1,clubb_mf_nup
          do k=1,nz-1
 
            ! get microphysics, autoconversion
            if (do_precip .and. upqc(k,i) > 0._r8) then
-             call precip_mf(upqs(k,i),upqt(k,i),upw(k,i),dzt(k+1),zm(k+1)-zcb(i),supqt(k+1,i))
+             call precip_mf(upqs(k,i),upqt(k,i),upw(k,i),dzm(k),zt(k+1)-zcb(i),supqt(k,i))
 
-             supthl(k+1,i) = -1._r8*lmixn*supqt(k+1,i)*iexner_zt(k+1)/cpair
+             supthl(k,i) = -1._r8*lmixn*supqt(k,i)*iexner_zm(k)/cpair
            else
-             supqt(k+1,i)  = 0._r8
-             supthl(k+1,i) = 0._r8
+             supqt(k,i)  = 0._r8
+             supthl(k,i) = 0._r8
            end if
 
            ! integrate updraft
-           entexp  = exp(-ent(k+1,i)*dzt(k+1))
-           entexpu = exp(-ent(k+1,i)*dzt(k+1)/3._r8)
+           entexp  = exp(-ent(k,i)*dzm(k))
+           entexpu = exp(-ent(k,i)*dzm(k)/3._r8)
 
-           qtn  = qt(k+1) *(1._r8-entexp ) + upqt (k,i)*entexp + supqt(k+1,i)
-           thln = thl(k+1)*(1._r8-entexp ) + upthl(k,i)*entexp + supthl(k+1,i)           
-           un   = u(k+1)  *(1._r8-entexpu) + upu  (k,i)*entexpu
-           vn   = v(k+1)  *(1._r8-entexpu) + upv  (k,i)*entexpu
+           qtn  = qt_zm(k) *(1._r8-entexp ) + upqt (k,i)*entexp + supqt(k,i)
+           thln = thl_zm(k)*(1._r8-entexp ) + upthl(k,i)*entexp + supthl(k,i)           
+           !un   = u(k+1)  *(1._r8-entexpu) + upu  (k,i)*entexpu
+           !vn   = v(k+1)  *(1._r8-entexpu) + upv  (k,i)*entexpu
 
-           ! get cloud, momentum levels
+           ! get cloud, thermodynamics levels
            if (do_condensation) then
-             call condensation_mf(qtn, thln, p_zm(k+1), iexner_zm(k+1), &
+             call condensation_mf(qtn, thln, p_zt(k+1), iexner_zt(k+1), &
                                   thvn, qcn, thn, qln, qin, qsn, lmixn)
-             if (zcb(i).eq.zcb_unset .and. qcn > 0._r8) zcb(i) = zm(k+1)
+             if (zcb(i).eq.zcb_unset .and. qcn > 0._r8) zcb(i) = zt(k+1)
            else
              thvn = thln*(1._r8+zvir*qtn)
            end if
 
            ! get buoyancy
-           B=gravit*(0.5_r8*(thvn + upthv(k,i))/thv(k+1)-1._r8)
+           B=gravit*(thvn/thv(k+1)-1._r8)
            if (debug) then
              if ( masterproc ) then
                write(iulog,*) "B(k,i), k, i ", B, k, i
@@ -478,12 +477,12 @@ module clubb_mf
            end if
 
            ! get wn^2
-           wp = wb*ent(k+1,i)
+           wp = wb*0.5_r8*(ent(k,i)+ent(k+1,i))
            if (wp==0._r8) then
              wn2 = upw(k,i)**2._r8+2._r8*wa*B*dzt(k+1)
            else
              entw = exp(-2._r8*wp*dzt(k+1))
-             wn2 = entw*upw(k,i)**2._r8+wa*B/(wb*ent(k+1,i))*(1._r8-entw)
+             wn2 = entw*upw(k,i)**2._r8+wa*B/wp*(1._r8-entw)
            end if
 
            if (wn2>0._r8) then
@@ -498,7 +497,7 @@ module clubb_mf
              upa(k+1,i)   = upa(k,i)
              upql(k+1,i)  = qln
              upqi(k+1,i)  = qin
-             upqv(k+1,i)  = qtn - qcn
+             if (qtn - qcn.gt.0._r8) upqv(k+1,i) = qtn - qcn
              uplmix(k+1,i)= lmixn
              upth(k+1,i)  = thn
            else
@@ -613,72 +612,51 @@ module clubb_mf
          awthl_conv = awth
          awqt_conv = awqv
          thl_env = th
-         thl_env_zm = th_zm
          qt_env = qv
-         qt_env_zm = qv_zm
        else
          awthl_conv = awthl       
          awqt_conv = awqt
          thl_env = thl
-         thl_env_zm = thl_zm
          qt_env = qt
-         qt_env_zm = qt_zm
        end if
 
-       if (pupwind) then
-         ! staggered environment values
+       ! use upwinding to compute fluxes
 
-         ! get thl & qt fluxes
-         betathl = (thl_env(4)-thl_env(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-         betaqt = (qt_env(4)-qt_env(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-         thl_env(1) = thl_env(2)-betathl*0.5_r8*(dzt(2)+dzt(1))
-         qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
+       ! get thl & qt fluxes
+       betathl = (thl_env(4)-thl_env(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+       betaqt = (qt_env(4)-qt_env(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+       thl_env(1) = thl_env(2)-betathl*0.5_r8*(dzt(2)+dzt(1))
+       qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
 
-         if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
-         do k=1,nz
-           thlflx(k)= awthl_conv(k) - aw(k)*thl_env(k)
-           qtflx(k)= awqt_conv(k) - aw(k)*qt_env(k)
-         enddo
+       if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
+       do k=1,nz
+         thlflx(k)= awthl_conv(k) - aw(k)*thl_env(k)
+         qtflx(k)= awqt_conv(k) - aw(k)*qt_env(k)
+       enddo
 
-         ! get th & qv fluxes
-         thl_env = th
-         qt_env = qv
-         betathl = (th(4)-th(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-         betaqt = (qv(4)-qv(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-         thl_env(1) = thl_env(2)-betathl*0.5_r8*(dzt(2)+dzt(1))
-         qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
+       ! get th & qv fluxes
+       thl_env = th
+       qt_env = qv
+       betathl = (th(4)-th(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+       betaqt = (qv(4)-qv(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+       thl_env(1) = thl_env(2)-betathl*0.5_r8*(dzt(2)+dzt(1))
+       qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
 
-         if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
-         do k=1,nz
-           thflx(k)= awth(k) - aw(k)*thl_env(k)
-           qvflx(k)= awqv(k) - aw(k)*qt_env(k)
-         enddo
+       if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
+       do k=1,nz
+         thflx(k)= awth(k) - aw(k)*thl_env(k)
+         qvflx(k)= awqv(k) - aw(k)*qt_env(k)
+       enddo
 
-         ! get qc fluxes
-         qt_env = qc
-         betaqt = (qc(4)-qc(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-         qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
+       ! get qc fluxes
+       qt_env = qc
+       betaqt = (qc(4)-qc(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+       qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
 
-         if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
-         do k=1,nz
-           qcflx(k)= awqc(k) - aw(k)*qt_env(k)
-         enddo
-
-       else
-         ! collocated environment values
-         do k=1,nz
-           ! get thl & qt fluxes
-           thlflx(k)= awthl_conv(k) - aw(k)*thl_env_zm(k)
-           qtflx(k) = awqt_conv(k) - aw(k)*qt_env_zm(k)
-
-           ! get th & qv fluxes
-           thflx(k) = awth(k) - aw(k)*th_zm(k)
-           qvflx(k) = awqv(k) - aw(k)*qv_zm(k)
-
-           ! get qc fluxes
-           qcflx(k) = awqc(k) - aw(k)*qc_zm(k)
-         end do
-       endif
+       if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
+       do k=1,nz
+         qcflx(k)= awqc(k) - aw(k)*qt_env(k)
+       enddo
 
      end if  ! ( wthv > 0.0 )
 

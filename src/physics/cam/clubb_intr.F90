@@ -1839,7 +1839,7 @@ end subroutine clubb_init_cnst
                                            th_zm,      qv_zm,         & ! momentum grid
                                                        qc_zm,         & ! momentum grid
                                            kappa_zm,   p_in_Pa_zm,    & ! momentum grid
-                                                       invrs_exner_zm   ! momentum grid
+                                           dzm,        invrs_exner_zm   ! momentum grid
 
    real(r8) :: temp2d(pcols,pver), temp2dp(pcols,pverp)  ! temporary array for holding scaled outputs
 
@@ -2545,8 +2545,10 @@ end subroutine clubb_init_cnst
 
            do k=2,pverp
              dzt(k) = zi_g(k) - zi_g(k-1)
+             dzm(k) = zt_g(k) - zt_g(k-1)
            enddo
            dzt(1) = dzt(2)
+           dzm(1) = dzm(2)
            invrs_dzt = 1._r8/dzt
 
            rtm_zm_in  = zt2zm_api( rtm_in )
@@ -2555,8 +2557,8 @@ end subroutine clubb_init_cnst
            qv_zm      = zt2zm_api( qv_zt )
            qc_zm      = zt2zm_api( qc_zt )
 
-           call integrate_mf( pverp,     dzt,         zi_g,       p_in_Pa_zm, invrs_exner_zm, & ! input
-                                                      rho_zt,     p_in_Pa,    invrs_exner_zt, & ! input
+           call integrate_mf( pverp,     dzm,         zi_g,       p_in_Pa_zm, invrs_exner_zm, & ! input
+                              rho_zt,    dzt,         zt_g,       p_in_Pa,    invrs_exner_zt, & ! input
                               um_in,     vm_in,       thlm_in,    rtm_in,     thv_ds_zt,      & ! input
                                                       th_zt,      qv_zt,      qc_zt,          & ! input
                                                       thlm_zm_in, rtm_zm_in,                  & ! input
@@ -2601,7 +2603,7 @@ end subroutine clubb_init_cnst
              mf_qcforc(k)   = mf_qcforc(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * &
                               ((rho_ds_zm(k) * mf_qcflx(k)) - (rho_ds_zm(k-1) * mf_qcflx(k-1)))
 
-             !mf_rcm(k)      = dtime * mf_qcforc(k)
+             mf_rcm(k)      = dtime * mf_qcforc(k)
            end do
 
          end if
