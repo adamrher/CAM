@@ -185,7 +185,7 @@ module clubb_mf
      integer,  dimension(nz,clubb_mf_nup) :: enti                        ! thermodynamic grid
      ! 
      ! other variables
-     integer                              :: k,i,ih
+     integer                              :: k,kstart,i,ih
      real(r8), dimension(clubb_mf_nup)    :: zcb
      real(r8)                             :: zcb_unset,                &
                                              wthv,                     &
@@ -388,20 +388,8 @@ module clubb_mf
              srfwthvu=srfwthvu+upthv(1,i)*upw(1,i)*upa(1,i)
              srfarea = srfarea+upa(1,i)
          end do
-
-         !if ( (srfwqtu .gt. srfarea*wqt) .and. (wqt .gt. 0._r8)) then
-             facqtu=srfarea*wqt/srfwqtu
-         !endif
-
-         !if ( srfwthvu .gt. srfarea*wthv) then
-             facthvu=srfarea*wthv/srfwthvu
-         !endif
-
-         if (debug) then
-           if ( masterproc ) then
-             write(iulog,*) "facqtu, facthvu ", facqtu, facthvu
-           end if
-         end if
+         facqtu=srfarea*wqt/srfwqtu
+         facthvu=srfarea*wthv/srfwthvu
        end if
 
        do i=1,clubb_mf_nup
@@ -623,13 +611,18 @@ module clubb_mf
        ! use upwinding to compute fluxes
 
        ! get thl & qt fluxes
-       betathl = (thl_env(4)-thl_env(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-       betaqt = (qt_env(4)-qt_env(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-       thl_env(1) = thl_env(2)-betathl*0.5_r8*(dzt(2)+dzt(1))
-       qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
+       if (scalesrf) then
+         kstart = 1
+         betathl = (thl_env(4)-thl_env(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+         betaqt = (qt_env(4)-qt_env(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+         thl_env(1) = thl_env(2)-betathl*0.5_r8*(dzt(2)+dzt(1))
+         qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
+         if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
+       else
+         kstart = 2
+       end if
 
-       if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
-       do k=1,nz
+       do k=kstart,nz
          thlflx(k)= awthl_conv(k) - aw(k)*thl_env(k)
          qtflx(k)= awqt_conv(k) - aw(k)*qt_env(k)
        enddo
@@ -637,24 +630,28 @@ module clubb_mf
        ! get th & qv fluxes
        thl_env = th
        qt_env = qv
-       betathl = (th(4)-th(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-       betaqt = (qv(4)-qv(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-       thl_env(1) = thl_env(2)-betathl*0.5_r8*(dzt(2)+dzt(1))
-       qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
+       if (scalesrf) then
+         betathl = (th(4)-th(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+         betaqt = (qv(4)-qv(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+         thl_env(1) = thl_env(2)-betathl*0.5_r8*(dzt(2)+dzt(1))
+         qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
+         if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
+       end if
 
-       if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
-       do k=1,nz
+       do k=kstart,nz
          thflx(k)= awth(k) - aw(k)*thl_env(k)
          qvflx(k)= awqv(k) - aw(k)*qt_env(k)
        enddo
 
        ! get qc fluxes
        qt_env = qc
-       betaqt = (qc(4)-qc(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
-       qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
+       if (scalesrf) then
+         betaqt = (qc(4)-qc(2))/(0.5_r8*(dzt(4)+2._r8*dzt(3)+dzt(2)))
+         qt_env(1) = qt_env(2)-betaqt*0.5_r8*(dzt(2)+dzt(1))
+         if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
+       end if
 
-       if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
-       do k=1,nz
+       do k=kstart,nz
          qcflx(k)= awqc(k) - aw(k)*qt_env(k)
        enddo
 

@@ -1215,6 +1215,7 @@ end subroutine clubb_init_cnst
       call addfld ( 'edmf_qvforc'   , (/ 'lev' /),  'A', 'kg/kg/s' , 'qv forcing (EDMF)' )
       call addfld ( 'edmf_qcforc'   , (/ 'lev' /),  'A', 'kg/kg/s' , 'qc forcing (EDMF)' )
       call addfld ( 'edmf_rcm'      , (/ 'lev' /),  'A', 'kg/kg'   , 'grid mean cloud (EDMF)' )
+      call addfld ( 'edmf_cfl'      ,  horiz_only,  'A', 'unitless', 'max column CFL (EDMF)' )
     end if 
 
     !  Initialize statistics, below are dummy variables
@@ -1342,6 +1343,7 @@ end subroutine clubb_init_cnst
          call add_default( 'edmf_qvforc'   , 1, ' ')
          call add_default( 'edmf_qcforc'   , 1, ' ')
          call add_default( 'edmf_rcm'      , 1, ' ')
+         call add_default( 'edmf_cfl'      , 1, ' ')
        end if
 
     end if
@@ -1812,6 +1814,9 @@ end subroutine clubb_init_cnst
    real(r8), dimension(pcols,pver)      :: mf_thlforc_output, mf_qtforc_output,    & ! thermodynamic grid
                                            mf_thforc_output,  mf_qvforc_output,    & ! thermodynamic grid
                                            mf_qcforc_output,  mf_rcm_output
+   real(r8), dimension(pcols)           :: max_cfl
+   real(r8)                             :: cflval,            cflfac
+   logical                              :: cfllim
    ! MF Plume
    real(r8), dimension(pverp)           :: mf_dry_a,   mf_moist_a,    &
                                            mf_dry_w,   mf_moist_w,    &
@@ -2580,6 +2585,17 @@ end subroutine clubb_init_cnst
                                          mf_qcflx,                                            & ! output - plume diagnostics
                               mf_thlflx, mf_qtflx )                                             ! output - variables needed for solver
 
+           ! CFL limiter
+           s_aw(0)   = 0._r8
+           max_cfl(i)= 0._r8
+           do k=2,pverp
+             max_cfl(i) = max(max_cfl(i),dtime*invrs_dzt(k)*max(s_aw(k-1),s_aw(k)))
+           end do
+           cflval = 2._r8
+           cflfac = 1._r8
+           cfllim = .true.
+           if (max_cfl(i).gt.cflval.and.cfllim) cflfac = cflval/max_cfl(i)
+
            ! pass MF turbulent advection term as CLUBB explicit forcing term
            rtm_forcing  = 0._r8
            thlm_forcing = 0._r8
@@ -2588,19 +2604,19 @@ end subroutine clubb_init_cnst
            mf_qcforc = 0._r8
            mf_rcm    = 0._r8
            do k=2,pverp
-             rtm_forcing(k)  = rtm_forcing(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * &
+             rtm_forcing(k)  = rtm_forcing(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * cflfac * &
                               ((rho_ds_zm(k) * mf_qtflx(k)) - (rho_ds_zm(k-1) * mf_qtflx(k-1)))
            
-             thlm_forcing(k) = thlm_forcing(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * &
+             thlm_forcing(k) = thlm_forcing(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * cflfac * &
                                ((rho_ds_zm(k) * mf_thlflx(k)) - (rho_ds_zm(k-1) * mf_thlflx(k-1)))
 
-             mf_thforc(k)   = mf_thforc(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * &
+             mf_thforc(k)   = mf_thforc(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * cflfac * &
                               ((rho_ds_zm(k) * mf_thflx(k)) - (rho_ds_zm(k-1) * mf_thflx(k-1)))
 
-             mf_qvforc(k)   = mf_qvforc(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * &
+             mf_qvforc(k)   = mf_qvforc(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * cflfac * &
                               ((rho_ds_zm(k) * mf_qvflx(k)) - (rho_ds_zm(k-1) * mf_qvflx(k-1)))           
 
-             mf_qcforc(k)   = mf_qcforc(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * &
+             mf_qcforc(k)   = mf_qcforc(k) - invrs_rho_ds_zt(k) * invrs_dzt(k) * cflfac * &
                               ((rho_ds_zm(k) * mf_qcflx(k)) - (rho_ds_zm(k-1) * mf_qcflx(k-1)))
 
              mf_rcm(k)      = dtime * mf_qcforc(k)
@@ -2968,10 +2984,7 @@ end subroutine clubb_init_cnst
          ptend_loc%u(i,k)   = (um(i,k)-state1%u(i,k))/hdtime             ! east-west wind
          ptend_loc%v(i,k)   = (vm(i,k)-state1%v(i,k))/hdtime             ! north-south wind
          ptend_loc%q(i,k,ixq) = (rtm(i,k)-rcm(i,k)-state1%q(i,k,ixq))/hdtime ! water vapor
-!+++ARH
          ptend_loc%q(i,k,ixcldliq) = (rcm(i,k)-state1%q(i,k,ixcldliq))/hdtime   ! Tendency of liquid water
-         !ptend_loc%q(i,k,ixcldliq) = (mf_rcm_output(i,k)+rcm(i,k)-state1%q(i,k,ixcldliq))/hdtime
-!---ARH
          ptend_loc%s(i,k)   = (clubb_s(k)-state1%s(i,k))/hdtime          ! Tendency of static energy
 
          rtm_integral_ltend = rtm_integral_ltend + ptend_loc%q(i,k,ixcldliq)*state1%pdel(i,k)/gravit
@@ -3557,6 +3570,7 @@ end subroutine clubb_init_cnst
      call outfld( 'edmf_qvforc'   , mf_qvforc_output,          pcols, lchnk )
      call outfld( 'edmf_qcforc'   , mf_qcforc_output,          pcols, lchnk )
      call outfld( 'edmf_rcm'      , mf_rcm_output,             pcols, lchnk )
+     call outfld( 'edmf_cfl'      , max_cfl,                   pcols, lchnk )
    end if
 
    !  Output CLUBB history here
