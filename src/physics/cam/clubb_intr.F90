@@ -2591,7 +2591,7 @@ end subroutine clubb_init_cnst
            do k=2,pverp
              max_cfl(i) = max(max_cfl(i),dtime*invrs_dzt(k)*max(s_aw(k-1),s_aw(k)))
            end do
-           cflval = 2._r8
+           cflval = 1._r8
            cflfac = 1._r8
            cfllim = .true.
            if (max_cfl(i).gt.cflval.and.cfllim) cflfac = cflval/max_cfl(i)
