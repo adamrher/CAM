@@ -75,14 +75,20 @@ module clubb_mf
 
   end subroutine clubb_mf_readnl
 
-  subroutine integrate_mf( nz,                                                      & ! input   
-                           rho_zm,  dzm,     zm,      p_zm,      iexner_zm,         & ! input
+  subroutine integrate_mf( nz,      dzm,     zm,      p_zm,      iexner_zm,         & ! input
                            rho_zt,  dzt,     zt,      p_zt,      iexner_zt,         & ! input
                            u,       v,       thl,     qt,        thv,               & ! input
                                              th,      qv,        qc,                & ! input
                                              thl_zm,  qt_zm,                        & ! input
                                              th_zm,   qv_zm,     qc_zm,             & ! input
                                              wthl,    wqt,       pblh,              & ! input
+                           dry_a,   moist_a,                                        & ! output - plume diagnostics
+                           dry_w,   moist_w,                                        & ! output - plume diagnostics
+                           dry_qt,  moist_qt,                                       & ! output - plume diagnostics
+                           dry_thl, moist_thl,                                      & ! output - plume diagnostics
+                           dry_u,   moist_u,                                        & ! output - plume diagnostics
+                           dry_v,   moist_v,                                        & ! output - plume diagnostics
+                                    moist_qc,                                       & ! output - plume diagnostics
                            ae,      aw,                                             & ! output - diagnosed fluxes BEFORE mean field update
                            awthl,   awqt,                                           & ! output - diagnosed fluxes BEFORE mean field update
                            awql,    awqi,                                           & ! output - diagnosed fluxes BEFORE mean field update
@@ -90,9 +96,7 @@ module clubb_mf
                            awu,     awv,                                            & ! output - diagnosed fluxes BEFORE mean field update
                            thflx,   qvflx,                                          & ! output - diagnosed fluxes BEFORE mean field update
                                     qcflx,                                          & ! output - diagnosed fluxes BEFORE mean field update
-                           thlflx,  qtflx,                                          & ! output - diagnosed fluxes BEFORE mean field update
-                           sthl_zt, sqt_zt,                                         & ! output - variables needed for solver
-                           precc )
+                           thlflx,  qtflx )                                           ! output - variables needed for solver
 
   ! ================================================================================= !
   ! Mass-flux algorithm                                                               !
@@ -131,132 +135,112 @@ module clubb_mf
                                             thl_zm,               & ! momentum grid
                                             th_zm,  qv_zm,        &
                                             qt_zm,  qc_zm,        & ! momentum grid
-                                            rho_zm,               & ! momentum grid
                                             dzm,    zm,           & ! momentum grid
                                             p_zm,   iexner_zm       ! momentum grid
 
      real(r8), intent(in)                :: wthl,wqt
      real(r8), intent(inout)             :: pblh
 
-     real(r8),dimension(nz), intent(out) :: ae,      aw,          & ! momentum grid
+     real(r8),dimension(nz), intent(out) :: dry_a,   moist_a,     & ! momentum grid
+                                            dry_w,   moist_w,     & ! momentum grid
+                                            dry_qt,  moist_qt,    & ! momentum grid
+                                            dry_thl, moist_thl,   & ! momentum grid
+                                            dry_u,   moist_u,     & ! momentum grid
+                                            dry_v,   moist_v,     & ! momentum grid
+                                                     moist_qc,    & ! momentum grid
+                                            ae,      aw,          & ! momentum grid
                                             awthl,   awqt,        & ! momentum grid
                                             awql,    awqi,        & ! momentum grid
                                             awth,    awqv,        & ! momentum grid
                                             awu,     awv,         & ! momentum grid
                                             thflx,   qvflx,       & ! momentum grid 
                                             qcflx,                & ! momentum grid
-                                            thlflx,  qtflx,       & ! momentum grid
-                                            sthl_zt, sqt_zt,      & ! thermodynamic grid
-                                            precc
+                                            thlflx,  qtflx          ! momentum grid
 
      ! =============================================================================== !
      ! INTERNAL VARIABLES
      !
      ! sums over all plumes
-     real(r8), dimension(nz)              :: moist_th,   dry_th,        & ! thermodynamic grid
-                                             awqc,                      & ! momentum grid                     
-                                             awthl_conv, awqt_conv,     & ! momentum grid
-                                             thl_env,    qt_env,        & ! thermodynamic grid
-                                             asthl,      asqt             ! momentum grid
+     real(r8), dimension(nz)              :: moist_th,   dry_th,      & ! momentum grid
+                                             awqc,                    & ! momentum grid                     
+                                             awthl_conv, awqt_conv,   & ! momentum grid
+                                             thl_env,    qt_env         ! thermodynamic grid
      !
      ! updraft properties
-     real(r8), dimension(nz,clubb_mf_nup) :: upw,      upa,             & ! momentum grid
-                                             upqt,     upqc,            & ! thermodynamic grid
-                                             upqv,     upqs,            & ! thermodynamic grid
-                                             upql,     upqi,            & ! thermodynamic grid
-                                             upth,     upthv,           & ! thermodynamic grid
-                                                       upthl,           & ! thermodynamic grid
-                                             upu,      upv,             & ! thermodynamic grid
-                                             uplmix                       ! thermodynamic grid
-     !
-     ! updraft properties
-     real(r8), dimension(nz,clubb_mf_nup) :: dnw,      dna,             &
-                                             dnqt,     dnqs,            &
-                                             dnthl,    dnthv,           &
-                                             dnrr          
+     real(r8), dimension(nz,clubb_mf_nup) :: upw,      upa,            & ! momentum grid
+                                             upqt,     upqc,           & ! momentum grid
+                                             upqv,     upqs,           & ! momentum grid
+                                             upql,     upqi,           & ! momentum grid
+                                             upth,     upthv,          & ! momentum grid
+                                                       upthl,          & ! momentum grid
+                                             upu,      upv,            & ! momentum grid 
+                                             uplmix                      ! momentum grid
      !
      ! microphyiscs terms
-     real(r8), dimension(nz,clubb_mf_nup) :: supqt,    supthl,          & ! momentum grid 
-                                             upauto,                    & ! momentum grid
-                                             uprr,                      & ! thermodynamic grid
-                                             sdnqt,    sdnthl             ! momentum grid
+     real(r8), dimension(nz,clubb_mf_nup) :: supqt,    supthl,         & ! thermodynamic grid 
+                                             uprr                        ! thermodynamic grid
      !
      ! entrainment profiles
-     real(r8), dimension(nz,clubb_mf_nup) :: ent,      entf,            & ! momentum grid
-                                             ent_zt                       ! thermodynamic grid
-     integer,  dimension(nz,clubb_mf_nup) :: enti                         ! momentum grid
-     real(r8)                             :: entdn
+     real(r8), dimension(nz,clubb_mf_nup) :: ent,      entf              ! thermodynamic grid
+     integer,  dimension(nz,clubb_mf_nup) :: enti                        ! thermodynamic grid
      ! 
      ! other variables
-     integer                              :: k,kstart,i,dntop
-     integer,  dimension(clubb_mf_nup)    :: ktop
+     integer                              :: k,kstart,i,ih
      real(r8), dimension(clubb_mf_nup)    :: zcb
-     real(r8)                             :: zcb_unset,                 &
-                                             wthv,                      &
-                                             wstar,   qstar,   thvstar, & 
-                                             sigmaw,  sigmaqt, sigmathv,&
-                                                      wmin,    wmax,    & 
-                                             wlv,     wtv,     wp,      & 
-                                             B,                         & ! thermodynamic grid
-                                             entexp,  entexpu, entw,    & ! thermodynamic grid
-                                             lmixt,                     & ! thermodynamic grid
-                                             qtovqs,  sevap,            & ! thermodynamic grid
-                                             betathl, betaqt,  betadn,  & ! thermodynamic grid        
-                                             thln,    thvn,    thn,     & ! momentum grid
-                                             qtn,     qsn,              & ! momentum grid
-                                             qcn,     qln,     qin,     & ! momentum grid
-                                             un,      vn,      wn2,     & ! momentum grid
-                                             lmixn,   srfarea,          & ! momentum grid
-                                             srfwqtu, srfwthvu,         &
+     real(r8)                             :: zcb_unset,                &
+                                             wthv,                     &
+                                             wstar,  qstar,   thvstar, & 
+                                             sigmaw, sigmaqt, sigmathv,&
+                                                     wmin,    wmax,    & 
+                                             wlv,    wtv,     wp,      & 
+                                             B,                        & ! thermodynamic grid
+                                             entexp, entexpu, entw,    & ! thermodynamic grid
+                                             lmixt,                    & ! thermodynamic grid
+                                             qtovqs, sevap,            & ! thermodynamic grid
+                                             betathl,betaqt,           & ! thermodynamic grid        
+                                             thln,   thvn,    thn,     & ! momentum grid
+                                             qtn,    qsn,              & ! momentum grid
+                                             qcn,    qln,     qin,     & ! momentum grid
+                                             un,     vn,      wn2,     & ! momentum grid
+                                             lmixn,   srfarea,         & ! momentum grid
+                                             srfwqtu, srfwthvu,        &
                                              facqtu,  facthvu
      
      ! parameters defining initial conditions for updrafts
-     real(r8),parameter                   :: pwmin = 1.5_r8,            &
+     real(r8),parameter                   :: pwmin = 1.5_r8,           &
                                              pwmax = 3._r8
 
      !
      ! alpha, z-scores after Suselj etal 2019
-     real(r8),parameter                   :: alphw   = 0.572_r8,        &
-                                             alphqt  = 2.890_r8,        &     
+     real(r8),parameter                   :: alphw   = 0.572_r8,       &
+                                             alphqt  = 2.890_r8,       &     
                                              alphthv = 2.890_r8
      !
      ! w' covariance after Suselj etal 2019
-     real(r8),parameter                   :: cwqt  = 0.32_r8,           &
+     real(r8),parameter                   :: cwqt  = 0.32_r8,          &
                                              cwthv = 0.58_r8
      !
      ! virtual mass coefficients for w-eqn after Suselj etal 2019
-     real(r8),parameter                   :: wa = 1.0_r8,               &
+     real(r8),parameter                   :: wa = 1.0_r8,              &
                                              wb = 1.5_r8
      !
      ! min values to avoid singularities
-     real(r8),parameter                   :: wstarmin = 1.e-3_r8,       &
+     real(r8),parameter                   :: wstarmin = 1.e-3_r8,      &
                                              pblhmin  = 100._r8
-     !
-     ! small number to avoid division by zero
-     real(r8),parameter                   :: small = 1.e-7_r8
      !
      ! to condensate or not to condensate
      logical                              :: do_condensation = .true.
      !
      ! to precip or not to precip
-     logical                              :: do_precip = .true.
+     logical                              :: do_precip = .false.
      !
      ! evaporation efficiency after Suselj etal 2019
      real(r8),parameter                   :: ke = 2.5e-4_r8
      !
-     ! fraction of rain detrained into downdrafts (zero turns off downdrafts)
+     ! fraction of rain detrained into downdrafts
      real(r8),parameter                   :: fdd = 0._r8
      !
-     ! height at which downdrafts feel the surface
-     real(r8),parameter                   :: z00dn = 1.e3_r8
-     !
-     ! minimum negative vertical velocity of downdraft
-     real(r8),parameter                   :: mindn = 1.e-2_r8
-     !
-     ! to fix entrainment
-     logical                              :: do_fixent = .false.
-     !
-     ! fixed entrainment rate 
+     ! fixed entrainment rate (debug only)
      real(r8),parameter                   :: fixent = 0.004_r8
      !
      ! to scale surface fluxes
@@ -266,13 +250,27 @@ module clubb_mf
      logical                              :: dryflux = .false.
      !
      ! to debug flag
-     logical                              :: debug  = .true.
+     logical                              :: debug  = .false.
 
      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
      !!!!!!!!!!!!!!!!!!!!!! BEGIN CODE !!!!!!!!!!!!!!!!!!!!!!!
      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
      ! INITIALIZE OUTPUT VARIABLES
+     ! set updraft properties to zero
+     dry_a     = 0._r8
+     moist_a   = 0._r8
+     dry_w     = 0._r8
+     moist_w   = 0._r8
+     dry_qt    = 0._r8
+     moist_qt  = 0._r8
+     dry_thl   = 0._r8
+     moist_thl = 0._r8
+     dry_u     = 0._r8
+     moist_u   = 0._r8
+     dry_v     = 0._r8
+     moist_v   = 0._r8
+     moist_qc  = 0._r8
      ! outputs - variables needed for solver
      aw        = 0._r8
      awth      = 0._r8
@@ -290,28 +288,12 @@ module clubb_mf
      qvflx     = 0._r8
      qcflx     = 0._r8
 
-     asthl     = 0._r8
-     asqt      = 0._r8
-     sthl_zt   = 0._r8
-     sqt_zt    = 0._r8
-     uprr      = 0._r8
-     precc     = 0._r8
-     supqt     = 0._r8
-     supthl    = 0._r8
-     upauto    = 0._r8
-     sdnqt     = 0._r8
-     sdnthl    = 0._r8 
-     dnrr      = 0._r8
- 
      ent       = 0._r8
-     ent_zt    = 0._r8
      entf      = 0._r8
      enti      = 0
 
      ! this is the environmental area - by default 1.
      ae = 1._r8
-     ktop = 0
-     dntop= 0
 
      ! START MAIN COMPUTATION
      upw   = 0._r8
@@ -329,13 +311,9 @@ module clubb_mf
      upqv  = 0._r8
      upqs  = 0._r8
      uplmix= 0._r8
-
-     dna   = 0._r8
-     dnw   = 0._r8
-     dnthl = 0._r8
-     dnthv = 0._r8
-     dnqt  = 0._r8
-     dnqs  = 0._r8
+     uprr  = 0._r8
+     supqt = 0._r8
+     supthl= 0._r8
 
      ! unique identifier
      zcb_unset = 9999999._r8
@@ -347,7 +325,7 @@ module clubb_mf
      ! if surface buoyancy is positive then do mass-flux
      if ( wthv > 0._r8 ) then
 
-       if (do_fixent) then
+       if (debug) then
          ! overide stochastic entrainment with fixent
          ent(:,:) = fixent
        else
@@ -368,12 +346,6 @@ module clubb_mf
              ent(k,i) = real( enti(k,i))*clubb_mf_ent0/dzm(k)
            enddo
          enddo
-
-         ! interpolate to thermodynamic levels
-         do k=2,nz
-           ent_zt(k,:) = 0.5_r8*(ent(k-1,:)+ent(k,:))
-         enddo
-         ent_zt(1,:) = ent_zt(2,:)
 
        end if
 
@@ -445,7 +417,6 @@ module clubb_mf
            upqi(1,i)  = qin
            upqs(1,i)  = qsn
            upth(1,i)  = thn
-           uplmix(1,i)= lmixn
            if (qcn > 0._r8) zcb(i) = zm(1)
          else
            ! assume no cldliq
@@ -459,12 +430,9 @@ module clubb_mf
 
            ! get microphysics, autoconversion
            if (do_precip .and. upqc(k,i) > 0._r8) then
-             call precip_mf(upqs(k,i),upqt(k,i),upw(k,i),dzm(k),zm(k)-zcb(i),supqt(k,i))
+             call precip_mf(upqs(k,i),upqt(k,i),upw(k,i),dzm(k),zt(k+1)-zcb(i),supqt(k,i))
 
-             ! save autoconversion for downdrafts since it will be modified by rain evaporation
-             upauto(k,i) = supqt(k,i)
-             ! use lmix from thermodynamic level below (not ideal)
-             supthl(k,i) = -1._r8*uplmix(k,i)*supqt(k,i)*iexner_zm(k)/cpair
+             supthl(k,i) = -1._r8*lmixn*supqt(k,i)*iexner_zm(k)/cpair
            else
              supqt(k,i)  = 0._r8
              supthl(k,i) = 0._r8
@@ -483,21 +451,21 @@ module clubb_mf
            if (do_condensation) then
              call condensation_mf(qtn, thln, p_zt(k+1), iexner_zt(k+1), &
                                   thvn, qcn, thn, qln, qin, qsn, lmixn)
-             if (zcb(i).eq.zcb_unset .and. qcn > 0._r8) zcb(i) = zm(k)
+             if (zcb(i).eq.zcb_unset .and. qcn > 0._r8) zcb(i) = zt(k+1)
            else
              thvn = thln*(1._r8+zvir*qtn)
            end if
 
            ! get buoyancy
            B=gravit*(thvn/thv(k+1)-1._r8)
-           !if (debug) then
-           !  if ( masterproc ) then
-           !    write(iulog,*) "B(k,i), k, i ", B, k, i
-           !  end if
-           !end if
+           if (debug) then
+             if ( masterproc ) then
+               write(iulog,*) "B(k,i), k, i ", B, k, i
+             end if
+           end if
 
            ! get wn^2
-           wp = wb*ent_zt(k+1,i)
+           wp = wb*0.5_r8*(ent(k,i)+ent(k+1,i))
            if (wp==0._r8) then
              wn2 = upw(k,i)**2._r8+2._r8*wa*B*dzt(k+1)
            else
@@ -520,7 +488,6 @@ module clubb_mf
              if (qtn - qcn.gt.0._r8) upqv(k+1,i) = qtn - qcn
              uplmix(k+1,i)= lmixn
              upth(k+1,i)  = thn
-             ktop(i)      = k+1
            else
              exit
            end if
@@ -530,179 +497,104 @@ module clubb_mf
        ! downward sweep for rain evaporation, snow melting 
        if (do_precip) then
          do i=1,clubb_mf_nup
-           do k=ktop(i),2,-1
+           do k=nz-1,1,-1
              ! get rain evaporation
-
-             ! ratio qt/qs on momentum levels
              if ((upqs(k,i) + upqs(k-1,i)).le.0._r8) then
                qtovqs = 0._r8
              else
                qtovqs = (upqt(k,i) + upqt(k-1,i))/(upqs(k,i) + upqs(k-1,i))
              end if
              qtovqs = min(1._r8,qtovqs)
-             sevap = ke*(1._r8 - qtovqs)*sqrt(max(uprr(k,i),0._r8))
+             sevap = ke*(1._r8 - qtovqs)*sqrt(max(uprr(k+1,i),0._r8))
 
-             ! get rain rate on thermodynamic levels
-             uprr(k-1,i) = uprr(k,i) &
-                         - rho_zm(k-1)*dzm(k-1)*( supqt(k-1,i)*(1._r8-fdd) + sevap )
+             ! get rain rate
+             uprr(k,i) = uprr(k+1,i) &
+                         - rho_zt(k)*dzt(k)*( supqt(k,i)*(1._r8-fdd) + sevap )
 
-             !if (debug) then
-             !  if ( masterproc ) then
-             !    write(iulog,*) "uprr(k,i), k, i ", uprr(k,i), k, i
-             !  end if
-             !end if
+             if (debug) then
+               if ( masterproc ) then
+                 write(iulog,*) "uprr(k,i), k, i ", uprr(k,i), k, i
+               end if
+             end if
 
              ! update source terms
-             supqt(k-1,i) = supqt(k-1,i) + sevap
-             ! use lmix from thermodynamic level below (not ideal)
-             supthl(k-1,i) = supthl(k-1,i) - uplmix(k-1,i)*sevap*iexner_zm(k-1)/cpair
+             lmixt = 0.5_r8*(uplmix(k,i)+uplmix(k-1,i))
+             supqt(k,i) = supqt(k,i) + sevap
+             supthl(k,i) = supthl(k,i) - lmixt*sevap*iexner_zt(k)/cpair
            end do
          end do
        end if
 
-       ! compute downdraft ensemble
-       if (fdd > 0._r8 .and. do_precip) then
-         ! set downdraft entrainment rate
-         entdn = clubb_mf_ent0/clubb_mf_L0
+       ! writing updraft properties for output
+       do k=1,nz
 
-         !initialize updrafts
+         ! first sum over all i-updrafts
          do i=1,clubb_mf_nup
-           do k=1,nz-1
-             ! upauto is on momentum levels
-             ! level wn>0 is one momentum level below
-             if (upauto(k,i) /= 0._r8) dntop = k
-           end do  
+           if (upqc(k,i)>0._r8) then
+             moist_a(k)   = moist_a(k)   + upa(k,i)
+             moist_w(k)   = moist_w(k)   + upa(k,i)*upw(k,i)
+             moist_qt(k)  = moist_qt(k)  + upa(k,i)*upqt(k,i)
+             moist_thl(k) = moist_thl(k) + upa(k,i)*upthl(k,i)
+             moist_u(k)   = moist_u(k)   + upa(k,i)*upu(k,i)
+             moist_v(k)   = moist_v(k)   + upa(k,i)*upv(k,i)
+             moist_qc(k)  = moist_qc(k)  + upa(k,i)*upqc(k,i)
+           else
+             dry_a(k)     = dry_a(k)     + upa(k,i)
+             dry_w(k)     = dry_w(k)     + upa(k,i)*upw(k,i)
+             dry_qt(k)    = dry_qt(k)    + upa(k,i)*upqt(k,i)
+             dry_thl(k)   = dry_thl(k)   + upa(k,i)*upthl(k,i)
+             dry_u(k)     = dry_u(k)     + upa(k,i)*upu(k,i)
+             dry_v(k)     = dry_v(k)     + upa(k,i)*upv(k,i)
+           endif
+         enddo
 
-           if (dntop > 1) then
-             ! downdraft mass flux on momentum levels
-             dnw(dntop-1,i)  = -1._r8*upw(dntop-1,i)
+         if ( dry_a(k) > 0._r8 ) then
+           dry_w(k)   = dry_w(k)   / dry_a(k)
+           dry_qt(k)  = dry_qt(k)  / dry_a(k)
+           dry_thl(k) = dry_thl(k) / dry_a(k)
+           dry_u(k)   = dry_u(k)   / dry_a(k)
+           dry_v(k)   = dry_v(k)   / dry_a(k)
+         else
+           dry_w(k)   = 0._r8
+           dry_qt(k)  = 0._r8
+           dry_thl(k) = 0._r8
+           dry_u(k)   = 0._r8
+           dry_v(k)   = 0._r8
+         endif
 
-             if (debug) then
-               if (qcn > 0._r8) then
-                 if ( masterproc ) then
-                   write(iulog,*) "initial downdraft w, dntop-1, i ", dnw(dntop-1,i), dntop-1, i
-                 end if
-               end if
-             end if
+         if ( moist_a(k) > 0._r8 ) then
+           moist_w(k)   = moist_w(k)   / moist_a(k)
+           moist_qt(k)  = moist_qt(k)  / moist_a(k)
+           moist_thl(k) = moist_thl(k) / moist_a(k)
+           moist_u(k)   = moist_u(k)   / moist_a(k)
+           moist_v(k)   = moist_v(k)   / moist_a(k)
+           moist_qc(k)  = moist_qc(k)  / moist_a(k)
+         else
+           moist_w(k)   = 0._r8
+           moist_qt(k)  = 0._r8
+           moist_thl(k) = 0._r8
+           moist_u(k)   = 0._r8
+           moist_v(k)   = 0._r8
+           moist_qc(k)  = 0._r8
+         endif
 
-             dna(dntop-1,i)  = upa(dntop-1,i)
-             ! downdraft properties on upwind thermodynamic levels
-             dnqt(dntop,i) = qt(dntop)
-             dnthl(dntop,i)= thl(dntop)
-             dnthv(dntop,i)= thv(dntop)
+       enddo
 
-             ! rain rate thermodynamic level
-             dnrr(dntop,i) = -1._r8*rho_zm(dntop)*dzm(dntop)*upauto(dntop,i)*fdd
-
-             do k=dntop-1,1,-1
-
-               call condensation_mf(dnqt(k+1,i), dnthl(k+1,i), p_zt(k+1), iexner_zt(k+1), &
-                                    thvn, qcn, thn, qln, qin, qsn, lmixn)
-               dnqs(k+1,i) = qsn
-               if (debug) then
-                 if (qcn > 0._r8) then
-                   if ( masterproc ) then
-                     write(iulog,*) " WARNING, saturated downdraft: qc, k, i ", qcn, k+1, i
-                   end if
-                 end if
-               end if
-
-               ! get evaporative source
-               call dnsource_mf(dnqs(k+1,i),dnqt(k+1,i),dnrr(k+1,i),ke,dnw(k,i),dzm(k),sdnqt(k,i))
-
-               if (debug) then
-                 if ( masterproc ) then
-                   write(iulog,*) "sdnqt, k, i ", sdnqt(k,i), k, i
-                 end if
-               end if
-
-               ! check that source term does not exceed available rain
-               sdnqt(k,i) = min(sdnqt(k,i),-1._r8*dnrr(k+1,i)/(rho_zm(k)*dzm(k)*dnw(k,i)))
-
-               if (debug) then
-                 if ( masterproc ) then
-                   write(iulog,*) "sdnqt adj., k, i ", sdnqt(k,i), k, i
-                 end if
-               end if
-
-               ! update sdnthl (I think this should be zero since there is no cloud liquid)
-               !sdnthl(k,i)= sdnqt(k,i)*lmixn*iexner_zm(k)/cpair
-
-               ! integrate down to get downdraft rain rate
-               dnrr(k,i) = dnrr(k+1,i) &
-                           - rho_zm(k)*dzm(k)*( sdnqt(k,i) + upauto(i,k)*fdd )
-
-               if (debug) then
-                 if ( masterproc ) then
-                   write(iulog,*) "dnrr, k, i ", dnrr(k,i), k, i
-                 end if
-               end if
-
-               dnrr(k,i) = max(dnrr(k,i),0._r8)
-
-               ! integrate down to get downdraft plume properties
-               entexp  = exp(-entdn*dzm(k))
-               entexpu = exp(-entdn*dzm(k)/3._r8)
-
-               dnqt(k,i) = dnqt(k+1,i)+(qt_zm(k)-dnqt(k+1,i))*(1._r8-entexp) &
-                           + sdnqt(k,i)
-               dnthl(k,i)= dnthl(k+1,i)+(thl_zm(k)-dnthl(k+1,i))*(1._r8-entexp) &
-                           + sdnthl(k,i)
-
-               ! get thetav (assume no cloud liquid)
-               dnthv(k,i)= dnthl(k,i)*(1._r8+zvir*dnqt(k,i))
-         
-               ! get buoyancy
-               B=gravit*(dnthv(k,i)/thv(k)-1._r8)
-               if (debug) then
-                 if ( masterproc ) then
-                   write(iulog,*) "Downdraft B(k,i), k, i ", B, k, i
-                 end if
-               end if
-               
-               ! get dynamic pressure w/ adjustment for surface
-               betadn = wb*entdn + 5._r8/(zt(k)+small) * max(1._r8-exp( zt(k)/z00dn - 1._r8 ),0._r8)
-
-               if (betadn==0._r8) then
-                 dnw(k-1,i) = dnw(k,i)**2._r8 - 2._r8*wa*B*dzt(k)
-               else
-                 entw=exp(-2._r8*betadn*dzt(k))
-                 dnw(k-1,i)=dnw(k+1,i)**2 * entw - wa*B/betadn * (1._r8-entw)
-               endif
-               dnw(k-1,i) = max(dnw(k-1,i),mindn**2._r8)
-               dnw(k-1,i) = -1._r8*sqrt(dnw(k-1,i))
-               dna(k-1,i) = dna(k,i)
-             end do
-           end if
-         end do
-       end if
-
-       do i=1,clubb_mf_nup
-         do k=1,ktop(i)
-           ae  (k) = ae  (k) - ( upa(k,i) + dna(k,i) )
-           aw  (k) = aw  (k) + ( upa(k,i)*upw(k,i) + dna(k,i)*dnw(k,i) )
-           awthl(k)= awthl(k)+ ( upa(k,i)*upw(k,i)*upthl(k,i) + dna(k,i)*dnw(k,i)*dnthl(k+1,i) )
-           awqt(k) = awqt(k) + ( upa(k,i)*upw(k,i)*upqt(k,i) + dna(k,i)*dnw(k,i)*dnqt(k+1,i) )
-           asthl(k)= asthl(k)+ ( upa(k,i)*supthl(k,i) + dna(k,i)*dnthl(k,i) )
-           asqt(k) = asqt(k) + ( upa(k,i)*supqt(k,i) + dna(k,i)*sdnqt(k,i) )
-           precc(k)= precc(k)+ ( upa(k,i)*uprr(k,i) + dna(k,i)*dnrr(k,i) )
+       do k=1,nz
+         do i=1,clubb_mf_nup
+           ae  (k) = ae  (k) - upa(k,i)
+           aw  (k) = aw  (k) + upa(k,i)*upw(k,i)
            awu (k) = awu (k) + upa(k,i)*upw(k,i)*upu(k,i)
            awv (k) = awv (k) + upa(k,i)*upw(k,i)*upv(k,i)
+           awthl(k)= awthl(k)+ upa(k,i)*upw(k,i)*upthl(k,i) 
            awth(k) = awth(k) + upa(k,i)*upw(k,i)*upth(k,i)
+           awqt(k) = awqt(k) + upa(k,i)*upw(k,i)*upqt(k,i)
            awqv(k) = awqv(k) + upa(k,i)*upw(k,i)*upqv(k,i)
            awql(k) = awql(k) + upa(k,i)*upw(k,i)*upql(k,i)
            awqi(k) = awqi(k) + upa(k,i)*upw(k,i)*upqi(k,i)
            awqc(k) = awqc(k) + upa(k,i)*upw(k,i)*upqc(k,i)
          enddo
        enddo
-
-       ! interpolate microphysics forcing to thermodynamic levels
-       do k=2,nz
-         sthl_zt(k)= 0.5_r8*(asthl(k-1)+asthl(k))
-         sqt_zt(k) = 0.5_r8*(asqt(k-1)+asqt(k))
-       enddo
-       sthl_zt(1)= sthl_zt(2)
-       sqt_zt(1) = sqt_zt(2)
 
        if (dryflux) then
          awthl_conv = awth
@@ -780,7 +672,6 @@ module clubb_mf
      !local variables
      integer  :: niter,i
      real(r8) :: diff,t,qstmp,qcold,es,wf
-     logical  :: noice = .true.
 
      ! max number of iterations
      niter=50
@@ -798,11 +689,8 @@ module clubb_mf
      ! T   = Th*Exner=(Thl+L/cp*ql/Exner)*Exner    (4)
      !     = Thl*Exner + L/cp*ql
      do i=1,niter
-       if (noice) then
-         wf = 1._r8
-       else
-         wf = get_watf(t)
-       end if
+       wf = get_watf(t)
+       !wf = 1._r8
        t = thl/iex+get_alhl(wf)/cpair*qc   !as in (4)
 
        ! qsat, p is in pascal (check!)
@@ -812,11 +700,8 @@ module clubb_mf
        if (abs(qc-qcold)<diff) exit
      enddo
 
-     if (noice) then
-       wf = 1._r8
-     else
-       wf = get_watf(t)
-     end if
+     wf = get_watf(t)
+     !wf = 1._r8 
      t = thl/iex+get_alhl(wf)/cpair*qc
 
      call qsat(t,p,es,qs)
@@ -892,26 +777,6 @@ module clubb_mf
        end if
 
   end subroutine precip_mf
-
-  subroutine dnsource_mf(qs,qt,rr,ke,w,dz,Sdnqt)
-  !**********************************************************************
-  ! Evaporation source for downdrafts
-  ! By Adam Herrington, after Kay Suselj
-  !**********************************************************************
-
-       real(r8),intent(in)  :: qs,qt,rr,ke,w,dz
-       real(r8),intent(out) :: Sdnqt
-       ! 
-       ! local vars
-       real(r8)            :: itaum,      & ! inverse tau (eqn C2 in Suselj et al 2019)
-                              alpha         ! exponential
-
-       itaum=ke*sqrt(rr)/qs
-       alpha=exp(-1._r8*dz*itaum/w)
-
-       Sdnqt=max((qs-qt)*(1._r8-alpha),0._r8)
-
-  end subroutine dnsource_mf
 
   subroutine poisson(nz,nup,lambda,poi,state)
   !**********************************************************************
