@@ -28,9 +28,10 @@ module clubb_intr
   use ref_pres,      only: top_lev => trop_cloud_top_lev  
   use zm_conv_intr,  only: zmconv_microp
 #ifdef CLUBB_SGS
-  use clubb_api_module, only: pdf_parameter, implicit_coefs_terms
-  use clubb_api_module, only: clubb_config_flags_type
-  use clubb_mf,         only: do_clubb_mf, do_clubb_mf_diag
+  use clubb_api_module,    only: pdf_parameter, implicit_coefs_terms
+  use clubb_api_module,    only: clubb_config_flags_type
+  use clubb_mf,            only: do_clubb_mf, do_clubb_mf_diag, clubb_mf_nup
+  use cam_history_support, only: add_hist_coord
 #endif
 
   implicit none
@@ -98,7 +99,7 @@ module clubb_intr
     rtpthlp_const = 0.01_r8             ! Constant to add to rtpthlp when moments are advected
     
   real(r8), parameter :: unset_r8 = huge(1.0_r8)
-    
+
   real(r8) :: clubb_timestep = unset_r8  ! Default CLUBB timestep, unless overwriten by namelist
   real(r8) :: clubb_rnevap_effic = unset_r8
 
@@ -1184,19 +1185,6 @@ end subroutine clubb_init_cnst
     ! Below are for detailed analysis of EDMF Scheme                               !
     ! ---------------------------------------------------------------------------- !
     if (do_clubb_mf) then
-      call addfld ( 'edmf_DRY_A'    , (/ 'ilev' /), 'A', 'fraction', 'Dry updraft area fraction (EDMF)' )
-      call addfld ( 'edmf_MOIST_A'  , (/ 'ilev' /), 'A', 'fraction', 'Moist updraft area fraction (EDMF)' )
-      call addfld ( 'edmf_DRY_W'    , (/ 'ilev' /), 'A', 'm/s'     , 'Dry updraft vertical velocity (EDMF)' )
-      call addfld ( 'edmf_MOIST_W'  , (/ 'ilev' /), 'A', 'm/s'     , 'Moist updraft vertical velocity (EDMF)' )
-      call addfld ( 'edmf_DRY_QT'   , (/ 'ilev' /), 'A', 'kg/kg'   , 'Dry updraft total water mixing ratio (EDMF)' )
-      call addfld ( 'edmf_MOIST_QT' , (/ 'ilev' /), 'A', 'kg/kg'   , 'Moist updraft total water mixing ratio (EDMF)' )
-      call addfld ( 'edmf_DRY_THL'  , (/ 'ilev' /), 'A', 'K'       , 'Dry updraft liquid-ice potential temperature (EDMF)' )
-      call addfld ( 'edmf_MOIST_THL', (/ 'ilev' /), 'A', 'K'       , 'Moist updraft liquid-ice potential temperature (EDMF)' )
-      call addfld ( 'edmf_DRY_U'    , (/ 'ilev' /), 'A', 'm/s'     , 'Dry updraft zonal velocity (EDMF)' )
-      call addfld ( 'edmf_MOIST_U'  , (/ 'ilev' /), 'A', 'm/s'     , 'Moist updraft zonal velocity (EDMF)' )
-      call addfld ( 'edmf_DRY_V'    , (/ 'ilev' /), 'A', 'm/s'     , 'Dry updraft meridional velocity (EDMF)' )
-      call addfld ( 'edmf_MOIST_V'  , (/ 'ilev' /), 'A', 'm/s'     , 'Moist updraft meridional velocity (EDMF)' )
-      call addfld ( 'edmf_MOIST_QC' , (/ 'ilev' /), 'A', 'kg/kg'   , 'Moist updraft condensate mixing ratio (EDMF)' )
       call addfld ( 'edmf_S_AE'     , (/ 'ilev' /), 'A', 'fraction', '1 minus sum of a_i*w_i (EDMF)' )
       call addfld ( 'edmf_S_AW'     , (/ 'ilev' /), 'A', 'm/s'     , 'Sum of a_i*w_i (EDMF)' )
       call addfld ( 'edmf_S_AWTHL'  , (/ 'ilev' /), 'A', 'K m/s'   , 'Sum of a_i*w_i*thl_i (EDMF)' )
@@ -1216,6 +1204,17 @@ end subroutine clubb_init_cnst
       call addfld ( 'edmf_qcforc'   , (/ 'lev' /),  'A', 'kg/kg/s' , 'qc forcing (EDMF)' )
       call addfld ( 'edmf_rcm'      , (/ 'lev' /),  'A', 'kg/kg'   , 'grid mean cloud (EDMF)' )
       call addfld ( 'edmf_cfl'      ,  horiz_only,  'A', 'unitless', 'max column CFL (EDMF)' )
+
+      call add_hist_coord('clubb_mf_nup', clubb_mf_nup, 'plume ensemble size')
+      call addfld ( 'edmf_upa'      , (/ 'ilev', 'clubb_mf_nup' /), 'A', 'fraction', 'Plume updraft area fraction (EDMF)' )
+      call addfld ( 'edmf_upw'      , (/ 'ilev', 'clubb_mf_nup' /), 'A', 'm/s'     , 'Plume updraft vertical velocity (EDMF)' )
+      call addfld ( 'edmf_upqt'     , (/ 'ilev', 'clubb_mf_nup' /), 'A', 'kg/kg'   , 'Plume updraft total water mixing ratio (EDMF)' )
+      call addfld ( 'edmf_upthl'    , (/ 'ilev', 'clubb_mf_nup' /), 'A', 'K'       , 'Plume updraft liquid potential temperature (EDMF)' )
+      call addfld ( 'edmf_upthv'    , (/ 'ilev', 'clubb_mf_nup' /), 'A', 'm/s'     , 'Plume updraft virtual potential temperature (EDMF)' )
+      call addfld ( 'edmf_upth'     , (/ 'ilev', 'clubb_mf_nup' /), 'A', 'm/s'     , 'Plume updraft potential temperature (EDMF)' )
+      call addfld ( 'edmf_upqc'     , (/ 'ilev', 'clubb_mf_nup' /), 'A', 'kg/kg'   , 'Plume updraft condensate mixing ratio (EDMF)' )
+      call addfld ( 'edmf_upbuoy'   , (/ 'ilev', 'clubb_mf_nup' /), 'A', 'm/s2'   , 'Plume updraft buoyancy (EDMF)' )
+      call addfld ( 'edmf_upent'    , (/ 'ilev', 'clubb_mf_nup' /), 'A', 'k1/m'   , 'Plume updraft entrainment rate (EDMF)' )
     end if 
 
     !  Initialize statistics, below are dummy variables
@@ -1313,19 +1312,15 @@ end subroutine clubb_init_cnst
        call add_default('CONCLD',           1, ' ')
 
        if (do_clubb_mf_diag) then
-         call add_default( 'edmf_DRY_A'    , 1, ' ')
-         call add_default( 'edmf_MOIST_A'  , 1, ' ')
-         call add_default( 'edmf_DRY_W'    , 1, ' ')
-         call add_default( 'edmf_MOIST_W'  , 1, ' ')
-         call add_default( 'edmf_DRY_QT'   , 1, ' ')
-         call add_default( 'edmf_MOIST_QT' , 1, ' ')
-         call add_default( 'edmf_DRY_THL'  , 1, ' ')
-         call add_default( 'edmf_MOIST_THL', 1, ' ')
-         call add_default( 'edmf_DRY_U'    , 1, ' ')
-         call add_default( 'edmf_MOIST_U'  , 1, ' ')
-         call add_default( 'edmf_DRY_V'    , 1, ' ')
-         call add_default( 'edmf_MOIST_V'  , 1, ' ')
-         call add_default( 'edmf_MOIST_QC' , 1, ' ')
+         call add_default( 'edmf_upa'      , 1, ' ')
+         call add_default( 'edmf_upw'      , 1, ' ')
+         call add_default( 'edmf_upqt'     , 1, ' ')
+         call add_default( 'edmf_upthl'    , 1, ' ')
+         call add_default( 'edmf_upthv'    , 1, ' ')
+         call add_default( 'edmf_upth'     , 1, ' ')
+         call add_default( 'edmf_upqc'     , 1, ' ')
+         call add_default( 'edmf_upbuoy'   , 1, ' ')
+         call add_default( 'edmf_upent'    , 1, ' ')
          call add_default( 'edmf_S_AE'     , 1, ' ')
          call add_default( 'edmf_S_AW'     , 1, ' ')
          call add_default( 'edmf_S_AWTH'   , 1, ' ')
@@ -1795,37 +1790,44 @@ end subroutine clubb_init_cnst
    logical                           :: apply_to_surface
 
    ! MF outputs to outfld
-   real(r8), dimension(pcols,pverp)     :: mf_dry_a_output,   mf_moist_a_output,   &
-                                           mf_dry_w_output,   mf_moist_w_output,   &
-                                           mf_dry_qt_output,  mf_moist_qt_output,  &
-                                           mf_dry_thl_output, mf_moist_thl_output, &
-                                           mf_dry_u_output,   mf_moist_u_output,   &
-                                           mf_dry_v_output,   mf_moist_v_output,   &
-                                                              mf_moist_qc_output,  &
-                                           s_ae_output,       s_aw_output,         &
+   real(r8), dimension(pcols,pverp)     :: s_ae_output,       s_aw_output,         &
                                            s_awthl_output,    s_awqt_output,       &
                                            s_awql_output,     s_awqi_output,       &
                                            s_awth_output,     s_awqv_output,       &
                                            s_awu_output,      s_awv_output,        &
                                            mf_thflx_output,   mf_qvflx_output,     &
                                            mf_thlflx_output,  mf_qtflx_output
-
-   ! MF outputs to outfld
+   !
+   real(r8), dimension(pcols,pverp,clubb_mf_nup) ::           mf_upa_flip,         &
+                                                              mf_upw_flip,         &
+                                                              mf_upqt_flip,        &
+                                                              mf_upthl_flip,       &
+                                                              mf_upthv_flip,       &
+                                                              mf_upth_flip,        &
+                                                              mf_upqc_flip,        &
+                                                              mf_upbuoy_flip,      &
+                                                              mf_upent_flip   
+   !
+   real(r8), dimension(pcols,pverp*clubb_mf_nup) ::           mf_upa_output,       &
+                                                              mf_upw_output,       &
+                                                              mf_upqt_output,      &
+                                                              mf_upthl_output,     &
+                                                              mf_upthv_output,     &
+                                                              mf_upth_output,      &
+                                                              mf_upqc_output,      &
+                                                              mf_upbuoy_output,    &
+                                                              mf_upent_output
+   ! 
    real(r8), dimension(pcols,pver)      :: mf_thlforc_output, mf_qtforc_output,    & ! thermodynamic grid
                                            mf_thforc_output,  mf_qvforc_output,    & ! thermodynamic grid
                                            mf_qcforc_output,  mf_rcm_output
+   !
    real(r8), dimension(pcols)           :: max_cfl
    real(r8)                             :: cflval,            cflfac
    logical                              :: cfllim
+   !
    ! MF Plume
-   real(r8), dimension(pverp)           :: mf_dry_a,   mf_moist_a,    &
-                                           mf_dry_w,   mf_moist_w,    &
-                                           mf_dry_qt,  mf_moist_qt,   &
-                                           mf_dry_thl, mf_moist_thl,  &
-                                           mf_dry_u,   mf_moist_u,    &
-                                           mf_dry_v,   mf_moist_v,    &
-                                                       mf_moist_qc,   &
-                                           s_ae,       s_aw,          &
+   real(r8), dimension(pverp)           :: s_ae,       s_aw,          &
                                            s_awthl,    s_awqt,        &
                                            s_awql,     s_awqi,        &
                                            s_awth,     s_awqv,        &
@@ -1835,6 +1837,17 @@ end subroutine clubb_init_cnst
                                            mf_qcflx,                  &
                                            mf_thforc,  mf_qvforc,     &
                                            mf_qcforc,  mf_rcm 
+   !
+   real(r8), dimension(pverp,clubb_mf_nup) ::          mf_upa,        &
+                                                       mf_upw,        &
+                                                       mf_upqt,       &
+                                                       mf_upthl,      &
+                                                       mf_upthv,      &
+                                                       mf_upth,       &
+                                                       mf_upqc,       &
+                                                       mf_upbuoy,     &
+                                                       mf_upent 
+   !
    ! MF local vars
    real(r8), dimension(pverp)           :: rtm_zm_in,  thlm_zm_in,    & ! momentum grid
                                            dzt,        invrs_dzt,     & ! thermodynamic grid
@@ -1849,7 +1862,7 @@ end subroutine clubb_init_cnst
    real(r8) :: temp2d(pcols,pver), temp2dp(pcols,pverp)  ! temporary array for holding scaled outputs
 
 
-   integer :: nlev
+   integer :: nlev,mm
 
    intrinsic :: max
 
@@ -2187,39 +2200,44 @@ end subroutine clubb_init_cnst
    call tropopause_findChemTrop(state, troplev)
 
    ! Initialize EDMF outputs
-   mf_dry_a_output(:,:)     = 0._r8
-   mf_moist_a_output(:,:)   = 0._r8
-   mf_dry_w_output(:,:)     = 0._r8
-   mf_moist_w_output(:,:)   = 0._r8
-   mf_dry_qt_output(:,:)    = 0._r8
-   mf_moist_qt_output(:,:)  = 0._r8
-   mf_dry_thl_output(:,:)   = 0._r8
-   mf_moist_thl_output(:,:) = 0._r8
-   mf_dry_u_output(:,:)     = 0._r8
-   mf_moist_u_output(:,:)   = 0._r8
-   mf_dry_v_output(:,:)     = 0._r8
-   mf_moist_v_output(:,:)   = 0._r8
-   mf_moist_qc_output(:,:)  = 0._r8
-   s_ae_output(:,:)         = 0._r8
-   s_aw_output(:,:)         = 0._r8
-   s_awthl_output(:,:)      = 0._r8
-   s_awqt_output(:,:)       = 0._r8
-   s_awql_output(:,:)       = 0._r8
-   s_awqi_output(:,:)       = 0._r8
-   s_awth_output(:,:)       = 0._r8
-   s_awqv_output(:,:)       = 0._r8
-   s_awu_output(:,:)        = 0._r8
-   s_awv_output(:,:)        = 0._r8
-   mf_thlflx_output(:,:)    = 0._r8
-   mf_qtflx_output(:,:)     = 0._r8
-   mf_thflx_output(:,:)     = 0._r8
-   mf_qvflx_output(:,:)     = 0._r8
-   mf_thlforc_output(:,:)   = 0._r8
-   mf_qtforc_output(:,:)    = 0._r8
-   mf_thforc_output(:,:)    = 0._r8
-   mf_qvforc_output(:,:)    = 0._r8
-   mf_qcforc_output(:,:)    = 0._r8
-   mf_rcm_output(:,:)       = 0._r8
+   mf_upa_output(:pcols,:pverp*clubb_mf_nup)    = 0._r8
+   mf_upw_output(:pcols,:pverp*clubb_mf_nup)    = 0._r8
+   mf_upqt_output(:pcols,:pverp*clubb_mf_nup)   = 0._r8
+   mf_upthl_output(:pcols,:pverp*clubb_mf_nup)  = 0._r8
+   mf_upthv_output(:pcols,:pverp*clubb_mf_nup)  = 0._r8
+   mf_upth_output(:pcols,:pverp*clubb_mf_nup)   = 0._r8
+   mf_upqc_output(:pcols,:pverp*clubb_mf_nup)   = 0._r8
+   mf_upbuoy_output(:pcols,:pverp*clubb_mf_nup) = 0._r8
+   mf_upent_output(:pcols,:pverp*clubb_mf_nup)  = 0._r8
+   mf_upa_flip(:pcols,:pverp,:clubb_mf_nup)     = 0._r8
+   mf_upw_flip(:pcols,:pverp,:clubb_mf_nup)     = 0._r8
+   mf_upqt_flip(:pcols,:pverp,:clubb_mf_nup)    = 0._r8
+   mf_upthl_flip(:pcols,:pverp,:clubb_mf_nup)   = 0._r8
+   mf_upthv_flip(:pcols,:pverp,:clubb_mf_nup)   = 0._r8
+   mf_upth_flip(:pcols,:pverp,:clubb_mf_nup)    = 0._r8
+   mf_upqc_flip(:pcols,:pverp,:clubb_mf_nup)    = 0._r8
+   mf_upbuoy_flip(:pcols,:pverp,:clubb_mf_nup)  = 0._r8
+   mf_upent_flip(:pcols,:pverp,:clubb_mf_nup)   = 0._r8
+   s_ae_output(:pcols,:pverp)                   = 0._r8
+   s_aw_output(:pcols,:pverp)                   = 0._r8
+   s_awthl_output(:pcols,:pverp)                = 0._r8
+   s_awqt_output(:pcols,:pverp)                 = 0._r8
+   s_awql_output(:pcols,:pverp)                 = 0._r8
+   s_awqi_output(:pcols,:pverp)                 = 0._r8
+   s_awth_output(:pcols,:pverp)                 = 0._r8
+   s_awqv_output(:pcols,:pverp)                 = 0._r8
+   s_awu_output(:pcols,:pverp)                  = 0._r8
+   s_awv_output(:pcols,:pverp)                  = 0._r8
+   mf_thlflx_output(:pcols,:pverp)              = 0._r8
+   mf_qtflx_output(:pcols,:pverp)               = 0._r8
+   mf_thflx_output(:pcols,:pverp)               = 0._r8
+   mf_qvflx_output(:pcols,:pverp)               = 0._r8
+   mf_thlforc_output(:pcols,:pverp)             = 0._r8
+   mf_qtforc_output(:pcols,:pverp)              = 0._r8
+   mf_thforc_output(:pcols,:pverp)              = 0._r8
+   mf_qvforc_output(:pcols,:pverp)              = 0._r8
+   mf_qcforc_output(:pcols,:pverp)              = 0._r8
+   mf_rcm_output(:pcols,:pverp)                 = 0._r8
 
    !  Loop over all columns in lchnk to advance CLUBB core
    do i=1,ncol   ! loop over columns
@@ -2550,10 +2568,10 @@ end subroutine clubb_init_cnst
 
            do k=2,pverp
              dzt(k) = zi_g(k) - zi_g(k-1)
-             dzm(k) = zt_g(k) - zt_g(k-1)
+             dzm(k-1) = zt_g(k) - zt_g(k-1)
            enddo
            dzt(1) = dzt(2)
-           dzm(1) = dzm(2)
+           dzm(pverp) = dzm(pver)
            invrs_dzt = 1._r8/dzt
 
            rtm_zm_in  = zt2zm_api( rtm_in )
@@ -2569,13 +2587,15 @@ end subroutine clubb_init_cnst
                                                       thlm_zm_in, rtm_zm_in,                  & ! input
                                                       th_zm,      qv_zm,      qc_zm,          & ! input
                                                       wpthlp_sfc, wprtp_sfc,  pblh(i),        & ! input
-                              mf_dry_a,  mf_moist_a,                                          & ! output - plume diagnostics
-                              mf_dry_w,  mf_moist_w,                                          & ! output - plume diagnostics
-                              mf_dry_qt, mf_moist_qt,                                         & ! output - plume diagnostics
-                              mf_dry_thl,mf_moist_thl,                                        & ! output - plume diagnostics
-                              mf_dry_u,  mf_moist_u,                                          & ! output - plume diagnostics
-                              mf_dry_v,  mf_moist_v,                                          & ! output - plume diagnostics
-                                         mf_moist_qc,                                         & ! output - plume diagnostics
+                              mf_upa,                                                         & ! output - plume diagnostics
+                              mf_upw,                                                         & ! output - plume diagnostics
+                              mf_upqt,                                                        & ! output - plume diagnostics
+                              mf_upthl,                                                       & ! output - plume diagnostics
+                              mf_upthv,                                                       & ! output - plume diagnostics
+                              mf_upth,                                                        & ! output - plume diagnostics
+                              mf_upqc,                                                        & ! output - plume diagnostics
+                              mf_upbuoy,                                                      & ! output - plume diagnostics
+                              mf_upent,                                                       & ! output - plume diagnostics
                               s_ae,      s_aw,                                                & ! output - plume diagnostics
                               s_awthl,   s_awqt,                                              & ! output - plume diagnostics
                               s_awql,    s_awqi,                                              & ! output - plume diagnostics
@@ -2784,21 +2804,6 @@ end subroutine clubb_init_cnst
          enddo
 
          if (do_clubb_mf) then
-           mf_dry_a_output(i,pverp-k+1)     = mf_dry_a(k)
-           mf_moist_a_output(i,pverp-k+1)   = mf_moist_a(k)
-           mf_dry_w_output(i,pverp-k+1)     = mf_dry_w(k)
-           mf_moist_w_output(i,pverp-k+1)   = mf_moist_w(k)
-           mf_dry_qt_output(i,pverp-k+1)    = mf_dry_qt(k)
-           mf_moist_qt_output(i,pverp-k+1)  = mf_moist_qt(k)
-           mf_dry_thl_output(i,pverp-k+1)   = mf_dry_thl(k)
-           mf_moist_thl_output(i,pverp-k+1) = mf_moist_thl(k)
-           mf_dry_u_output(i,pverp-k+1)     = mf_dry_u(k)
-           mf_moist_u_output(i,pverp-k+1)   = mf_moist_u(k)
-           mf_dry_v_output(i,pverp-k+1)     = mf_dry_v(k)
-           mf_moist_v_output(i,pverp-k+1)   = mf_moist_v(k)
-           mf_moist_qc_output(i,pverp-k+1)  = mf_moist_qc(k)
-           mf_thlflx_output(i,pverp-k+1)    = mf_thlflx(k)
-           mf_qtflx_output(i,pverp-k+1)     = mf_qtflx(k)
            s_ae_output(i,pverp-k+1)         = s_ae(k)
            s_aw_output(i,pverp-k+1)         = s_aw(k)
            s_awthl_output(i,pverp-k+1)      = s_awthl(k)
@@ -2821,9 +2826,34 @@ end subroutine clubb_init_cnst
              mf_qcforc_output(i,pverp-k+1)  = mf_qcforc(k)
              mf_rcm_output(i,pverp-k+1) = mf_rcm(k)
            end if
+
+           mf_upa_flip(i,pverp-k+1,:clubb_mf_nup)       = mf_upa(k,:clubb_mf_nup)
+           mf_upw_flip(i,pverp-k+1,:clubb_mf_nup)       = mf_upw(k,:clubb_mf_nup)
+           mf_upqt_flip(i,pverp-k+1,:clubb_mf_nup)      = mf_upqt(k,:clubb_mf_nup)
+           mf_upthl_flip(i,pverp-k+1,:clubb_mf_nup)     = mf_upthl(k,:clubb_mf_nup)
+           mf_upthv_flip(i,pverp-k+1,:clubb_mf_nup)     = mf_upthv(k,:clubb_mf_nup)
+           mf_upth_flip(i,pverp-k+1,:clubb_mf_nup)      = mf_upth(k,:clubb_mf_nup)
+           mf_upqc_flip(i,pverp-k+1,:clubb_mf_nup)      = mf_upqc(k,:clubb_mf_nup)
+           mf_upbuoy_flip(i,pverp-k+1,:clubb_mf_nup)    = mf_upbuoy(k,:clubb_mf_nup)
+           mf_upent_flip(i,pverp-k+1,:clubb_mf_nup)     = mf_upent(k,:clubb_mf_nup)
+
          end if
 
       enddo
+
+      if (do_clubb_mf) then
+        do k=1,clubb_mf_nup     
+          mf_upa_output(i,pverp*(k-1)+1:pverp*k)   = mf_upa_flip(i,:pverp,k)
+          mf_upw_output(i,pverp*(k-1)+1:pverp*k)   = mf_upw_flip(i,:pverp,k)
+          mf_upqt_output(i,pverp*(k-1)+1:pverp*k)  = mf_upqt_flip(i,:pverp,k)
+          mf_upthl_output(i,pverp*(k-1)+1:pverp*k) = mf_upthl_flip(i,:pverp,k)
+          mf_upthv_output(i,pverp*(k-1)+1:pverp*k) = mf_upthv_flip(i,:pverp,k)
+          mf_upth_output(i,pverp*(k-1)+1:pverp*k)  = mf_upth_flip(i,:pverp,k)
+          mf_upqc_output(i,pverp*(k-1)+1:pverp*k)  = mf_upqc_flip(i,:pverp,k)
+          mf_upbuoy_output(i,pverp*(k-1)+1:pverp*k)= mf_upbuoy_flip(i,:pverp,k)
+          mf_upent_output(i,pverp*(k-1)+1:pverp*k) = mf_upent_flip(i,:pverp,k)
+        end do
+      end if
 
       ! Values to use above top_lev, for variables that have not already been
       ! set up there. These are mostly fill values that should not actually be
@@ -3539,19 +3569,15 @@ end subroutine clubb_init_cnst
    ! Writing state variables after EDMF scheme for detailed analysis !
    ! --------------------------------------------------------------- !
    if (do_clubb_mf) then
-     call outfld( 'edmf_DRY_A'    , mf_dry_a_output,           pcols, lchnk )
-     call outfld( 'edmf_MOIST_A'  , mf_moist_a_output,         pcols, lchnk )
-     call outfld( 'edmf_DRY_W'    , mf_dry_w_output,           pcols, lchnk )
-     call outfld( 'edmf_MOIST_W'  , mf_moist_w_output,         pcols, lchnk )
-     call outfld( 'edmf_DRY_QT'   , mf_dry_qt_output,          pcols, lchnk )
-     call outfld( 'edmf_MOIST_QT' , mf_moist_qt_output,        pcols, lchnk )
-     call outfld( 'edmf_DRY_THL'  , mf_dry_thl_output,         pcols, lchnk )
-     call outfld( 'edmf_MOIST_THL', mf_moist_thl_output,       pcols, lchnk )
-     call outfld( 'edmf_DRY_U'    , mf_dry_u_output,           pcols, lchnk )
-     call outfld( 'edmf_MOIST_U'  , mf_moist_u_output,         pcols, lchnk )
-     call outfld( 'edmf_DRY_V'    , mf_dry_v_output,           pcols, lchnk )
-     call outfld( 'edmf_MOIST_V'  , mf_moist_v_output,         pcols, lchnk )
-     call outfld( 'edmf_MOIST_QC' , mf_moist_qc_output,        pcols, lchnk )
+     call outfld( 'edmf_upa'      , mf_upa_output,             pcols, lchnk )
+     call outfld( 'edmf_upw'      , mf_upw_output,             pcols, lchnk )
+     call outfld( 'edmf_upqt'     , mf_upqt_output,            pcols, lchnk )
+     call outfld( 'edmf_upthl'    , mf_upthl_output,           pcols, lchnk )
+     call outfld( 'edmf_upthv'    , mf_upthv_output,           pcols, lchnk )
+     call outfld( 'edmf_upth'     , mf_upth_output,            pcols, lchnk )
+     call outfld( 'edmf_upqc'     , mf_upqc_output,            pcols, lchnk )
+     call outfld( 'edmf_upbuoy'   , mf_upbuoy_output,          pcols, lchnk )
+     call outfld( 'edmf_upent'    , mf_upent_output,           pcols, lchnk )
      call outfld( 'edmf_S_AE'     , s_ae_output,               pcols, lchnk )
      call outfld( 'edmf_S_AW'     , s_aw_output,               pcols, lchnk )
      call outfld( 'edmf_S_AWTH'   , s_awth_output,             pcols, lchnk )

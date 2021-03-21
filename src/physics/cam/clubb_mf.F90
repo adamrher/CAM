@@ -16,11 +16,12 @@ module clubb_mf
   public :: integrate_mf, &
             clubb_mf_readnl, &
             do_clubb_mf, &
-            do_clubb_mf_diag
+            do_clubb_mf_diag, &
+            clubb_mf_nup
 
   real(r8) :: clubb_mf_L0   = 0._r8
   real(r8) :: clubb_mf_ent0 = 0._r8
-  integer  :: clubb_mf_nup  = 0
+  integer, protected :: clubb_mf_nup  = 0
   logical, protected :: do_clubb_mf = .false.
   logical, protected :: do_clubb_mf_diag = .false.
 
@@ -82,13 +83,15 @@ module clubb_mf
                                              thl_zm,  qt_zm,                        & ! input
                                              th_zm,   qv_zm,     qc_zm,             & ! input
                                              wthl,    wqt,       pblh,              & ! input
-                           dry_a,   moist_a,                                        & ! output - plume diagnostics
-                           dry_w,   moist_w,                                        & ! output - plume diagnostics
-                           dry_qt,  moist_qt,                                       & ! output - plume diagnostics
-                           dry_thl, moist_thl,                                      & ! output - plume diagnostics
-                           dry_u,   moist_u,                                        & ! output - plume diagnostics
-                           dry_v,   moist_v,                                        & ! output - plume diagnostics
-                                    moist_qc,                                       & ! output - plume diagnostics
+                           upa,                                                     & ! output - plume diagnostics
+                           upw,                                                     & ! output - plume diagnostics
+                           upqt,                                                    & ! output - plume diagnostics
+                           upthl,                                                   & ! output - plume diagnostics
+                           upthv,                                                   & ! output - plume diagnostics
+                           upth,                                                    & ! output - plume diagnostics
+                           upqc,                                                    & ! output - plume diagnostics
+                           upbuoy,                                                  & ! output - plume diagnostics
+                           upent,                                                   & ! output - plume diagnostics
                            ae,      aw,                                             & ! output - diagnosed fluxes BEFORE mean field update
                            awthl,   awqt,                                           & ! output - diagnosed fluxes BEFORE mean field update
                            awql,    awqi,                                           & ! output - diagnosed fluxes BEFORE mean field update
@@ -141,14 +144,17 @@ module clubb_mf
      real(r8), intent(in)                :: wthl,wqt
      real(r8), intent(inout)             :: pblh
 
-     real(r8),dimension(nz), intent(out) :: dry_a,   moist_a,     & ! momentum grid
-                                            dry_w,   moist_w,     & ! momentum grid
-                                            dry_qt,  moist_qt,    & ! momentum grid
-                                            dry_thl, moist_thl,   & ! momentum grid
-                                            dry_u,   moist_u,     & ! momentum grid
-                                            dry_v,   moist_v,     & ! momentum grid
-                                                     moist_qc,    & ! momentum grid
-                                            ae,      aw,          & ! momentum grid
+     real(r8),dimension(nz,clubb_mf_nup), intent(out) :: upa,     & ! momentum grid
+                                                         upw,     & ! momentum grid
+                                                         upqt,    & ! momentum grid
+                                                         upthl,   & ! momentum grid
+                                                         upthv,   & ! momentum grid
+                                                         upth,    & ! momentum grid
+                                                         upqc,    & ! momentum grid
+                                                         upbuoy,  & ! momentum grid
+                                                         upent
+
+     real(r8),dimension(nz), intent(out) :: ae,      aw,          & ! momentum grid
                                             awthl,   awqt,        & ! momentum grid
                                             awql,    awqi,        & ! momentum grid
                                             awth,    awqv,        & ! momentum grid
@@ -167,12 +173,8 @@ module clubb_mf
                                              thl_env,    qt_env         ! thermodynamic grid
      !
      ! updraft properties
-     real(r8), dimension(nz,clubb_mf_nup) :: upw,      upa,            & ! momentum grid
-                                             upqt,     upqc,           & ! momentum grid
-                                             upqv,     upqs,           & ! momentum grid
+     real(r8), dimension(nz,clubb_mf_nup) :: upqv,     upqs,           & ! momentum grid
                                              upql,     upqi,           & ! momentum grid
-                                             upth,     upthv,          & ! momentum grid
-                                                       upthl,          & ! momentum grid
                                              upu,      upv,            & ! momentum grid 
                                              uplmix                      ! momentum grid
      !
@@ -257,20 +259,6 @@ module clubb_mf
      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
      ! INITIALIZE OUTPUT VARIABLES
-     ! set updraft properties to zero
-     dry_a     = 0._r8
-     moist_a   = 0._r8
-     dry_w     = 0._r8
-     moist_w   = 0._r8
-     dry_qt    = 0._r8
-     moist_qt  = 0._r8
-     dry_thl   = 0._r8
-     moist_thl = 0._r8
-     dry_u     = 0._r8
-     moist_u   = 0._r8
-     dry_v     = 0._r8
-     moist_v   = 0._r8
-     moist_qc  = 0._r8
      ! outputs - variables needed for solver
      aw        = 0._r8
      awth      = 0._r8
@@ -310,8 +298,10 @@ module clubb_mf
      upqi  = 0._r8
      upqv  = 0._r8
      upqs  = 0._r8
+     upbuoy= 0._r8
      uplmix= 0._r8
      uprr  = 0._r8
+     upent = 0._r8
      supqt = 0._r8
      supthl= 0._r8
 
@@ -344,6 +334,7 @@ module clubb_mf
          do i=1,clubb_mf_nup
            do k=1,nz
              ent(k,i) = real( enti(k,i))*clubb_mf_ent0/dzm(k)
+             upent(k,i) = ent(k,i)
            enddo
          enddo
 
@@ -488,6 +479,7 @@ module clubb_mf
              if (qtn - qcn.gt.0._r8) upqv(k+1,i) = qtn - qcn
              uplmix(k+1,i)= lmixn
              upth(k+1,i)  = thn
+             upbuoy(k+1,i)= B
            else
              exit
            end if
@@ -524,61 +516,6 @@ module clubb_mf
            end do
          end do
        end if
-
-       ! writing updraft properties for output
-       do k=1,nz
-
-         ! first sum over all i-updrafts
-         do i=1,clubb_mf_nup
-           if (upqc(k,i)>0._r8) then
-             moist_a(k)   = moist_a(k)   + upa(k,i)
-             moist_w(k)   = moist_w(k)   + upa(k,i)*upw(k,i)
-             moist_qt(k)  = moist_qt(k)  + upa(k,i)*upqt(k,i)
-             moist_thl(k) = moist_thl(k) + upa(k,i)*upthl(k,i)
-             moist_u(k)   = moist_u(k)   + upa(k,i)*upu(k,i)
-             moist_v(k)   = moist_v(k)   + upa(k,i)*upv(k,i)
-             moist_qc(k)  = moist_qc(k)  + upa(k,i)*upqc(k,i)
-           else
-             dry_a(k)     = dry_a(k)     + upa(k,i)
-             dry_w(k)     = dry_w(k)     + upa(k,i)*upw(k,i)
-             dry_qt(k)    = dry_qt(k)    + upa(k,i)*upqt(k,i)
-             dry_thl(k)   = dry_thl(k)   + upa(k,i)*upthl(k,i)
-             dry_u(k)     = dry_u(k)     + upa(k,i)*upu(k,i)
-             dry_v(k)     = dry_v(k)     + upa(k,i)*upv(k,i)
-           endif
-         enddo
-
-         if ( dry_a(k) > 0._r8 ) then
-           dry_w(k)   = dry_w(k)   / dry_a(k)
-           dry_qt(k)  = dry_qt(k)  / dry_a(k)
-           dry_thl(k) = dry_thl(k) / dry_a(k)
-           dry_u(k)   = dry_u(k)   / dry_a(k)
-           dry_v(k)   = dry_v(k)   / dry_a(k)
-         else
-           dry_w(k)   = 0._r8
-           dry_qt(k)  = 0._r8
-           dry_thl(k) = 0._r8
-           dry_u(k)   = 0._r8
-           dry_v(k)   = 0._r8
-         endif
-
-         if ( moist_a(k) > 0._r8 ) then
-           moist_w(k)   = moist_w(k)   / moist_a(k)
-           moist_qt(k)  = moist_qt(k)  / moist_a(k)
-           moist_thl(k) = moist_thl(k) / moist_a(k)
-           moist_u(k)   = moist_u(k)   / moist_a(k)
-           moist_v(k)   = moist_v(k)   / moist_a(k)
-           moist_qc(k)  = moist_qc(k)  / moist_a(k)
-         else
-           moist_w(k)   = 0._r8
-           moist_qt(k)  = 0._r8
-           moist_thl(k) = 0._r8
-           moist_u(k)   = 0._r8
-           moist_v(k)   = 0._r8
-           moist_qc(k)  = 0._r8
-         endif
-
-       enddo
 
        do k=1,nz
          do i=1,clubb_mf_nup
