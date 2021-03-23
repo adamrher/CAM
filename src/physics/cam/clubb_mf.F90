@@ -334,7 +334,6 @@ module clubb_mf
          do i=1,clubb_mf_nup
            do k=1,nz
              ent(k,i) = real( enti(k,i))*clubb_mf_ent0/dzm(k)
-             upent(k,i) = ent(k,i)
            enddo
          enddo
 
@@ -480,6 +479,7 @@ module clubb_mf
              uplmix(k+1,i)= lmixn
              upth(k+1,i)  = thn
              upbuoy(k+1,i)= B
+             upent(k,i) = ent(k,i)
            else
              exit
            end if
