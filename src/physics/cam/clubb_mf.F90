@@ -91,7 +91,7 @@ module clubb_mf
                            upth,                                                    & ! output - plume diagnostics
                            upqc,                                                    & ! output - plume diagnostics
                            upbuoy,                                                  & ! output - plume diagnostics
-                           upent,                                                   & ! output - plume diagnostics
+                           ent,                                                     & ! output - plume diagnostics
                            ae,      aw,                                             & ! output - diagnosed fluxes BEFORE mean field update
                            awthl,   awqt,                                           & ! output - diagnosed fluxes BEFORE mean field update
                            awql,    awqi,                                           & ! output - diagnosed fluxes BEFORE mean field update
@@ -152,7 +152,7 @@ module clubb_mf
                                                          upth,    & ! momentum grid
                                                          upqc,    & ! momentum grid
                                                          upbuoy,  & ! momentum grid
-                                                         upent
+                                                         ent
 
      real(r8),dimension(nz), intent(out) :: ae,      aw,          & ! momentum grid
                                             awthl,   awqt,        & ! momentum grid
@@ -183,7 +183,7 @@ module clubb_mf
                                              uprr                        ! thermodynamic grid
      !
      ! entrainment profiles
-     real(r8), dimension(nz,clubb_mf_nup) :: ent,      entf              ! thermodynamic grid
+     real(r8), dimension(nz,clubb_mf_nup) :: entf                        ! thermodynamic grid
      integer,  dimension(nz,clubb_mf_nup) :: enti                        ! thermodynamic grid
      ! 
      ! other variables
@@ -301,7 +301,6 @@ module clubb_mf
      upbuoy= 0._r8
      uplmix= 0._r8
      uprr  = 0._r8
-     upent = 0._r8
      supqt = 0._r8
      supthl= 0._r8
 
@@ -333,7 +332,7 @@ module clubb_mf
          ! get entrainment, ent=ent0/dz*P(dz/L0)
          do i=1,clubb_mf_nup
            do k=1,nz
-             ent(k,i) = real( enti(k,i))*clubb_mf_ent0/dzm(k)
+             ent(k,i) = real( enti(k,i) )*clubb_mf_ent0/dzm(k)
            enddo
          enddo
 
@@ -479,7 +478,6 @@ module clubb_mf
              uplmix(k+1,i)= lmixn
              upth(k+1,i)  = thn
              upbuoy(k+1,i)= B
-             upent(k,i) = ent(k,i)
            else
              exit
            end if
