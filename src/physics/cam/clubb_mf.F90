@@ -557,9 +557,9 @@ module clubb_mf
          kstart = 2
        end if
 
-       do k=kstart,nz
-         thlflx(k)= awthl_conv(k) - aw(k)*thl_env(k)
-         qtflx(k)= awqt_conv(k) - aw(k)*qt_env(k)
+       do k=kstart,nz-1
+         thlflx(k)= awthl_conv(k) - aw(k)*thl_env(k+1)
+         qtflx(k)= awqt_conv(k) - aw(k)*qt_env(k+1)
        enddo
 
        ! get th & qv fluxes
@@ -573,9 +573,9 @@ module clubb_mf
          if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
        end if
 
-       do k=kstart,nz
-         thflx(k)= awth(k) - aw(k)*thl_env(k)
-         qvflx(k)= awqv(k) - aw(k)*qt_env(k)
+       do k=kstart,nz-1
+         thflx(k)= awth(k) - aw(k)*thl_env(k+1)
+         qvflx(k)= awqv(k) - aw(k)*qt_env(k+1)
        enddo
 
        ! get qc fluxes
@@ -586,8 +586,8 @@ module clubb_mf
          if (qt_env(1).lt.0._r8) qt_env(1) = 0._r8
        end if
 
-       do k=kstart,nz
-         qcflx(k)= awqc(k) - aw(k)*qt_env(k)
+       do k=kstart,nz-1
+         qcflx(k)= awqc(k) - aw(k)*qt_env(k+1)
        enddo
 
      end if  ! ( wthv > 0.0 )
