@@ -964,6 +964,8 @@ contains
     ! Initialize the snapshot capability
     call cam_snapshot_init(cam_in, cam_out, pbuf2d, begchunk)
 
+!++jtb : comment this out. these are alos in cam_diagnostics.
+#if 0
     ! addfld calls for U, V tendency budget variables that are output in
     ! tphysac, tphysbc
     call addfld ( 'UTEND_DCONV', (/ 'lev' /), 'A', 'm/s2', 'Zonal wind tendency by deep convection')
@@ -999,7 +1001,8 @@ contains
     call addfld('UTEND_CORE', (/ 'lev' /), 'A', 'm/s2' , 'Zonal wind tendency due to dynamical core')
     call addfld('VTEND_CORE', (/ 'lev' /), 'A', 'm/s2' , 'Meridional wind tendency due to dynamical core')
     call register_vector_field('UTEND_CORE','VTEND_CORE')
-
+#endif
+!--jtb
 
     call phys_getopts(history_budget_out = history_budget, &
          history_budget_histfile_num_out = history_budget_histfile_num)

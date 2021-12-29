@@ -1,4 +1,3 @@
-
 module upper_bc
 
 !---------------------------------------------------------------------------------
@@ -157,11 +156,16 @@ end subroutine ubc_setopts
     use mo_snoe,     only: snoe_inti
     use mo_msis_ubc, only: msis_ubc_inti
     use constituents,only: cnst_get_ind
+    use scamMod,only: single_column
 
 !---------------------------Local workspace-----------------------------
     logical :: zonal_avg
 !-----------------------------------------------------------------------
-    apply_upper_bc = ptop_ref<1._r8 ! Pa
+    if (  .not.(single_column) ) then
+        apply_upper_bc = ptop_ref<1._r8 ! Pa
+    else
+        apply_upper_bc = .FALSE.   ! Always false for HiTop SCAM config 
+    end if
 
     if (.not.apply_upper_bc) return
 

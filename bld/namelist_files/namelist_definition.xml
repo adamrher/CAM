@@ -5193,18 +5193,18 @@ Interpolate ana fields to constant pressure surfaces
 Default: FALSE
 </entry>
 
-
-<entry id="scm_ana_frc_file_template" type="char*128" input_pathname="abs" category="scam"
+<entry id="scm_ana_frc_file_template" type="char*128" category="scam"
        group="scam_nl" valid_values="" >
 template for analysis forcing dataset.
-Default: set by build-namelist.
+Default: none
 </entry>
 
-<entry id="scm_ana_frc_path" type="char*128" input_pathname="abs" category="scam"
+<entry id="scm_ana_frc_path" type="char*256" input_pathname="abs" category="scam"
        group="scam_nl" valid_values="" >
 templatefull path for analysis forcing dataset.
-Default: set by build-namelist.
+Default: none
 </entry>
+
 
 <entry id="scm_use_ana_iop" type="logical" category="scam"
        group="scam_nl" valid_values="">

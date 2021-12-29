@@ -1,5 +1,20 @@
+#if PCOLS=1
+#define SCAMRUN
+#else
+#undef SCAMRUN
+#endif
 module nudging
+!++jtb
 !=====================================================================
+! Don't like using #define to control nudging with SCAM 
+! but haven't figured out better way given that some variables 
+! need to be (are) dimensioned differently when single column
+! is being run. (12/11/21) 
+!
+! Using PCOLS=1 to key off of may be an interim solution, and this 
+! is interim code anyway (12/12/21)
+!=====================================================================
+!--jtb
 !
 ! Purpose: Implement Nudging of the model state of U,V,T,Q, and/or PS
 !          toward specified values from analyses. 
@@ -200,6 +215,7 @@ module nudging
   use cam_abortutils, only:endrun
   use spmd_utils  ,   only:masterproc
   use cam_logfile ,   only:iulog
+  use scamMod,  only:single_column
 #ifdef SPMD
   use mpishorthand
 #endif
@@ -208,7 +224,12 @@ module nudging
   ! and then explicitly set their exposure.
   !----------------------------------------------------------
   implicit none
+
+
+
+
   private
+
 
   public:: Nudge_Model,Nudge_ON
   public:: nudging_readnl
@@ -311,6 +332,15 @@ module nudging
   real(r8),allocatable::Nobs_T (:,:,:,:) !(pcols,pver,begchunk:endchunk,Nudge_NumObs)
   real(r8),allocatable::Nobs_Q (:,:,:,:) !(pcols,pver,begchunk:endchunk,Nudge_NumObs)
   real(r8),allocatable::Nobs_PS(:,:,:)   !(pcols,begchunk:endchunk,Nudge_NumObs)
+
+!++jtb
+!      Put these in pre-amble so
+!      so they can be calculated 
+!      once and remembered
+#ifdef SCAMRUN
+  real(r8) :: scam_lat, scam_lon
+#endif
+!--jtb
 
 contains
   !================================================================
@@ -557,7 +587,7 @@ contains
    integer  istat,lchnk,ncol,icol,ilev
    integer  hdim1_d,hdim2_d
    integer  dtime
-   real(r8) rlat,rlon
+   real(r8) rlat,rlon 
    real(r8) Wprof(pver)
    real(r8) lonp,lon0,lonn,latp,lat0,latn
    real(r8) Val1_p,Val2_p,Val3_p,Val4_p
@@ -659,6 +689,8 @@ contains
        Model_Step=Nudge_Step
      endif
 
+!++jtb
+#ifndef SCAMRUN
      ! Initialize column and level dimensions
      !--------------------------------------------------------
      call get_horiz_grid_dim_d(hdim1_d,hdim2_d)
@@ -666,6 +698,18 @@ contains
      Nudge_nlat=hdim2_d
      Nudge_ncol=hdim1_d*hdim2_d
      Nudge_nlev=pver
+#else
+       ! Hard wired for now to FV 0.9x1.25-32L
+       !  (288 x 192 x 32 )
+       ! Really really needs to be generalized 
+       ! in a sensible way!!
+     Nudge_nlon=288
+     Nudge_nlat=192
+     Nudge_ncol=Nudge_nlat*Nudge_nlon
+     Nudge_nlev= pver ! 70 ! 32
+ 
+#endif
+!--jtb
 
      ! Check the time relative to the nudging window
      !------------------------------------------------
@@ -771,6 +815,9 @@ contains
      !--------------------------
      Nudge_Initialized=.true.
 
+
+!++jtb
+#ifndef SCAMRUN
      ! Check that this is a valid DYCORE model
      !------------------------------------------
      if((.not.dycore_is('UNSTRUCTURED')).and. &
@@ -778,6 +825,10 @@ contains
         (.not.dycore_is('LR')          )      ) then
        call endrun('NUDGING IS CURRENTLY ONLY CONFIGURED FOR CAM-SE, FV, or EUL')
      endif
+#else
+     write(iulog,*) ' Running Single-Column case'
+#endif
+!--jtb
 
      ! Informational Output
      !---------------------------
@@ -922,6 +973,8 @@ contains
     write(iulog,*) 'NUDGING: Reading analyses:',trim(Nudge_Path)//trim(Nudge_File)
    endif
 
+!++jtb
+#ifndef SCAMRUN
    ! Rotate Nudge_ObsInd() indices for new data, then update 
    ! the Nudge observation arrays with analysis data at the 
    ! NEXT==Nudge_ObsInd(1) time.
@@ -933,6 +986,16 @@ contains
    else !if(dycore_is('LR')) then
      call nudging_update_analyses_fv (trim(Nudge_Path)//trim(Nudge_File))
    endif
+#else 
+        lchnk=begchunk
+        icol=get_ncols_p(lchnk)
+        if ((icol /= 1).OR.(begchunk /= endchunk)) call endrun( "Not a Single Column run")
+        scam_lat=get_rlat_p(lchnk,icol)*180._r8/SHR_CONST_PI
+        scam_lon=get_rlon_p(lchnk,icol)*180._r8/SHR_CONST_PI
+   call nudging_update_analyses_fv (trim(Nudge_Path)//trim(Nudge_File) , scam_lon=scam_lon, scam_lat=scam_lat)
+#endif
+!--jtb
+
 
    ! Initialize Nudging Coeffcient profiles in local arrays
    ! Load zeros into nudging arrays
@@ -953,6 +1016,7 @@ contains
        Nudge_Qtau(icol,:,lchnk)=Wprof(:)
 
        Nudge_PStau(icol,lchnk)=nudging_set_PSprofile(rlat,rlon,Nudge_PSprof)
+
      end do
      Nudge_Utau(:ncol,:pver,lchnk) =                             &
      Nudge_Utau(:ncol,:pver,lchnk) * Nudge_Ucoef/float(Nudge_Step)
@@ -1159,6 +1223,8 @@ contains
      ! the Nudge observation arrays with analysis data at the 
      ! NEXT==Nudge_ObsInd(1) time.
      !----------------------------------------------------------
+!++jtb
+#ifndef SCAMRUN
      if(dycore_is('UNSTRUCTURED')) then
        call nudging_update_analyses_se (trim(Nudge_Path)//trim(Nudge_File))
      elseif(dycore_is('EUL')) then
@@ -1166,6 +1232,12 @@ contains
      else !if(dycore_is('LR')) then
        call nudging_update_analyses_fv (trim(Nudge_Path)//trim(Nudge_File))
      endif
+#else 
+       write(iulog,*) "reading FV grid in SCAM"
+       write(iulog,*) "SCAM Lat Lon: ",scam_lat, scam_lon
+   call nudging_update_analyses_fv (trim(Nudge_Path)//trim(Nudge_File)   , scam_lon=scam_lon, scam_lat=scam_lat  )
+#endif
+!--jtb
    endif ! ((Before_End).and.(Update_Nudge)) then
 
    !----------------------------------------------------------------
@@ -1357,6 +1429,7 @@ contains
    lq(:)   =.false.
    lq(indw)=.true.
    call physics_ptend_init(phys_tend,phys_state%psetcols,'nudging',lu=.true.,lv=.true.,ls=.true.,lq=lq)
+
 
    if(Nudge_ON) then
      lchnk=phys_state%lchnk
@@ -1701,12 +1774,18 @@ contains
        call endrun ('UPDATE_ANALYSES_EUL')
      endif
 
+!++jtb
+#ifndef SCAMRUN
      if((Nudge_nlon.ne.nlon).or.(Nudge_nlat.ne.nlat).or.(plev.ne.pver)) then
       write(iulog,*) 'ERROR: nudging_update_analyses_eul: nlon=',nlon,' Nudge_nlon=',Nudge_nlon
       write(iulog,*) 'ERROR: nudging_update_analyses_eul: nlat=',nlat,' Nudge_nlat=',Nudge_nlat
       write(iulog,*) 'ERROR: nudging_update_analyses_eul: plev=',plev,' pver=',pver
       call endrun('nudging_update_analyses_eul: analyses dimension mismatch')
      endif
+#else
+      write( * , *) " SCAM run , dont worry about analysis vs model grid "
+#endif
+!--jtb
 
      ! Read in, transpose lat/lev indices, 
      ! and scatter data arrays
@@ -1829,7 +1908,7 @@ contains
 
 
   !================================================================
-  subroutine nudging_update_analyses_fv(anal_file)
+  subroutine nudging_update_analyses_fv(anal_file   , scam_lon , scam_lat )
    ! 
    ! NUDGING_UPDATE_ANALYSES_FV: 
    !                 Open the given analyses data file, read in 
@@ -1838,10 +1917,13 @@ contains
    !===============================================================
    use ppgrid ,only: pver,begchunk
    use netcdf
-
+ 
    ! Arguments
    !-------------
    character(len=*),intent(in):: anal_file
+!++jtb ;  SCAMRUN
+   real(r8), intent(in), optional :: scam_lon,scam_lat
+!--jtb
 
    ! Local values
    !-------------
@@ -1851,10 +1933,20 @@ contains
    integer ilat,ilon,ilev
    real(r8) Xanal(Nudge_nlon,Nudge_nlat,Nudge_nlev)
    real(r8) PSanal(Nudge_nlon,Nudge_nlat)
+   real(r8) PHISanal(Nudge_nlon,Nudge_nlat)
    real(r8) Lat_anal(Nudge_nlat)
    real(r8) Lon_anal(Nudge_nlon)
+   real(r8) rlon,rlat
+!++jtb
+#ifndef SCAMRUN
    real(r8) Xtrans(Nudge_nlon,Nudge_nlev,Nudge_nlat)
+#else
+   real(r8) Xtrans(Nudge_nlev)
+   integer iscam_lat(1),iscam_lon(1)
+#endif
+!--jtb
    integer  nn,Nindex
+
 
    ! Rotate Nudge_ObsInd() indices, then check the existence of the analyses 
    ! file; broadcast the updated indices and file status to all the other MPI nodes. 
@@ -1956,6 +2048,8 @@ contains
      ! Read in, transpose lat/lev indices, 
      ! and scatter data arrays
      !----------------------------------
+     !  First block reads and scatters U
+     !----------------------------------
      istat=nf90_inq_varid(ncid,'U',varid)
      if(istat.ne.NF90_NOERR) then
        write(iulog,*) nf90_strerror(istat)
@@ -1966,16 +2060,30 @@ contains
        write(iulog,*) nf90_strerror(istat)
        call endrun ('UPDATE_ANALYSES_FV')
      endif
+            !!write(*,*) " ----in- it !!!  "
+#ifndef SCAMRUN
      do ilat=1,nlat
      do ilev=1,plev
      do ilon=1,nlon
-       Xtrans(ilon,ilev,ilat)=Xanal(ilon,ilat,ilev)
+       Xtrans(ilon,ilev,ilat)= Xanal(ilon,ilat,ilev)
      end do
      end do
      end do
+#else
+       write(iulog,*) 'SCAM lon lat in nudging_update_analyses_fv: '
+       write(iulog,*) scam_lon, scam_lat
+       iscam_lon = MINLOC( ABS( LON_Anal - SCAM_lon ) )       
+       iscam_lat = MINLOC( ABS( LAT_Anal - SCAM_lat ) )       
+       Xtrans = Xanal( iscam_lon(1), iscam_lat(1), : )
+#endif
    endif ! (masterproc) then
+#ifndef SCAMRUN
    call scatter_field_to_chunk(1,Nudge_nlev,1,Nudge_nlon,Xtrans,   &
                                Nobs_U(1,1,begchunk,Nudge_ObsInd(1)))
+#else
+   call scatter_field_to_chunk(1, Nudge_nlev, 1, 1 ,Xtrans,   &
+                               Nobs_U(1,1,begchunk,Nudge_ObsInd(1)))
+#endif
 
    if(masterproc) then
      istat=nf90_inq_varid(ncid,'V',varid)
@@ -1988,16 +2096,25 @@ contains
        write(iulog,*) nf90_strerror(istat)
        call endrun ('UPDATE_ANALYSES_FV')
      endif
+#ifndef SCAMRUN
      do ilat=1,nlat
      do ilev=1,plev
      do ilon=1,nlon
-       Xtrans(ilon,ilev,ilat)=Xanal(ilon,ilat,ilev)
+       Xtrans(ilon,ilev,ilat)= Xanal(ilon,ilat,ilev)
      end do
      end do
      end do
+#else
+       Xtrans = Xanal( iscam_lon(1), iscam_lat(1), : )
+#endif
    endif ! (masterproc) then
+#ifndef SCAMRUN
    call scatter_field_to_chunk(1,Nudge_nlev,1,Nudge_nlon,Xtrans,   &
                                Nobs_V(1,1,begchunk,Nudge_ObsInd(1)))
+#else
+   call scatter_field_to_chunk(1, Nudge_nlev, 1, 1 ,Xtrans,   &
+                               Nobs_V(1,1,begchunk,Nudge_ObsInd(1)))
+#endif
 
    if(masterproc) then
      istat=nf90_inq_varid(ncid,'T',varid)
@@ -2010,16 +2127,25 @@ contains
        write(iulog,*) nf90_strerror(istat)
        call endrun ('UPDATE_ANALYSES_FV')
      endif
+#ifndef SCAMRUN
      do ilat=1,nlat
      do ilev=1,plev
      do ilon=1,nlon
-       Xtrans(ilon,ilev,ilat)=Xanal(ilon,ilat,ilev)
+       Xtrans(ilon,ilev,ilat)= Xanal(ilon,ilat,ilev)
      end do
      end do
      end do
+#else
+       Xtrans = Xanal( iscam_lon(1), iscam_lat(1), : )
+#endif
    endif ! (masterproc) then
+#ifndef SCAMRUN
    call scatter_field_to_chunk(1,Nudge_nlev,1,Nudge_nlon,Xtrans,   &
                                Nobs_T(1,1,begchunk,Nudge_ObsInd(1)))
+#else
+   call scatter_field_to_chunk(1, Nudge_nlev, 1, 1 ,Xtrans,   &
+                               Nobs_T(1,1,begchunk,Nudge_ObsInd(1)))
+#endif
 
    if(masterproc) then
      istat=nf90_inq_varid(ncid,'Q',varid)
@@ -2032,16 +2158,25 @@ contains
        write(iulog,*) nf90_strerror(istat)
        call endrun ('UPDATE_ANALYSES_FV')
      endif
+#ifndef SCAMRUN
      do ilat=1,nlat
      do ilev=1,plev
      do ilon=1,nlon
-       Xtrans(ilon,ilev,ilat)=Xanal(ilon,ilat,ilev)
+       Xtrans(ilon,ilev,ilat)= Xanal(ilon,ilat,ilev)
      end do
      end do
      end do
+#else
+       Xtrans = Xanal( iscam_lon(1), iscam_lat(1), : )
+#endif
    endif ! (masterproc) then
+#ifndef SCAMRUN
    call scatter_field_to_chunk(1,Nudge_nlev,1,Nudge_nlon,Xtrans,   &
                                Nobs_Q(1,1,begchunk,Nudge_ObsInd(1)))
+#else
+   call scatter_field_to_chunk(1, Nudge_nlev, 1, 1 ,Xtrans,   &
+                               Nobs_Q(1,1,begchunk,Nudge_ObsInd(1)))
+#endif
 
    if(masterproc) then
     istat=nf90_inq_varid(ncid,'PS',varid)
@@ -2057,15 +2192,36 @@ contains
 
      ! Close the analyses file
      !-----------------------
+     !istat=nf90_close(ncid)
+     !if(istat.ne.NF90_NOERR) then
+     !  write(iulog,*) nf90_strerror(istat)
+     !  call endrun ('UPDATE_ANALYSES_EUL')
+     !endif
+   endif ! (masterproc) then
+#ifndef SCAMRUN
+   call scatter_field_to_chunk(1,1,1,Nudge_nlon,PSanal,           &
+                               Nobs_PS(1,begchunk,Nudge_ObsInd(1)))
+#else
+   call scatter_field_to_chunk(1,1,1,1,PSanal(iscam_lon(1), iscam_lat(1) ),   &
+                               Nobs_PS(1,begchunk,Nudge_ObsInd(1)))
+#endif
+
+
+   if(masterproc) then
+     ! Close the analyses file
+     !-----------------------
      istat=nf90_close(ncid)
      if(istat.ne.NF90_NOERR) then
        write(iulog,*) nf90_strerror(istat)
-       call endrun ('UPDATE_ANALYSES_EUL')
+       call endrun ('UPDATE_ANALYSES_FV')
      endif
-   endif ! (masterproc) then
-   call scatter_field_to_chunk(1,1,1,Nudge_nlon,PSanal,           &
-                               Nobs_PS(1,begchunk,Nudge_ObsInd(1)))
+   end if
 
+
+
+#ifdef SCAMRUN
+    write(*,*) " Finished in nudging_update_analyses_fv "
+#endif
    ! End Routine
    !------------
    return
