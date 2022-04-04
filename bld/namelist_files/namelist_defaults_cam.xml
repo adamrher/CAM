@@ -1911,16 +1911,16 @@
 <clubb_C_invrs_tau_sfc                                                > 0.12743072568015346 </clubb_C_invrs_tau_sfc>
 <clubb_C_invrs_tau_shear                                              > 0.12502726304767026 </clubb_C_invrs_tau_shear>
 <clubb_C_invrs_tau_N2                                                 > 0.08122667220596895 </clubb_C_invrs_tau_N2>
-<clubb_C_invrs_tau_N2_wp2                                             > 0.2                 </clubb_C_invrs_tau_N2_wp2>
-<clubb_C_invrs_tau_N2_xp2                                             > 0.2                 </clubb_C_invrs_tau_N2_xp2>
+<clubb_C_invrs_tau_N2_wp2                                             > 0.1                 </clubb_C_invrs_tau_N2_wp2>
+<clubb_C_invrs_tau_N2_xp2                                             > 0.05                </clubb_C_invrs_tau_N2_xp2>
 <clubb_C_invrs_tau_N2_wpxp                                            > 0.0                 </clubb_C_invrs_tau_N2_wpxp>
-<clubb_C_invrs_tau_N2_clear_wp3                                       > 0.0                 </clubb_C_invrs_tau_N2_clear_wp3>
+<clubb_C_invrs_tau_N2_clear_wp3                                       > 1.0                 </clubb_C_invrs_tau_N2_clear_wp3>
 <clubb_c1                         clubb_l_diag_Lscale_from_tau="true" > 1.0                 </clubb_c1>
 <clubb_c1b                        clubb_l_diag_Lscale_from_tau="true" > 1.0                 </clubb_c1b>
 <clubb_C2rt                       clubb_l_diag_Lscale_from_tau="true" > 1.0                 </clubb_C2rt>
 <clubb_C2thl                      clubb_l_diag_Lscale_from_tau="true" > 1.0                 </clubb_C2thl>
 <clubb_C2rtthl                    clubb_l_diag_Lscale_from_tau="true" > 1.0                 </clubb_C2rtthl>
-<clubb_C4                         clubb_l_diag_Lscale_from_tau="true" > 2.0                 </clubb_C4>
+<clubb_C4                         clubb_l_diag_Lscale_from_tau="true" > 5.2                 </clubb_C4>
 <clubb_C_uu_shr                   clubb_l_diag_Lscale_from_tau="true" > 0.1076484659222455  </clubb_C_uu_shr>
 <clubb_C_uu_buoy                  clubb_l_diag_Lscale_from_tau="true" > 0.3                 </clubb_C_uu_buoy>
 <clubb_c6rt                       clubb_l_diag_Lscale_from_tau="true" > 2.0                 </clubb_c6rt>
