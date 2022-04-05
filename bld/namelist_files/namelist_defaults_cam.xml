@@ -1907,6 +1907,7 @@
 
 <!-- Lscale from tau defaults -->
 <clubb_l_diag_Lscale_from_tau                                         > .false.             </clubb_l_diag_Lscale_from_tau>
+<clubb_l_e3sm_config                                                  > .false.             </clubb_l_e3sm_config>
 <clubb_C_invrs_tau_bkgnd                                              > 3.727123755772682   </clubb_C_invrs_tau_bkgnd>
 <clubb_C_invrs_tau_sfc                                                > 0.12743072568015346 </clubb_C_invrs_tau_sfc>
 <clubb_C_invrs_tau_shear                                              > 0.12502726304767026 </clubb_C_invrs_tau_shear>
