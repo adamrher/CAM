@@ -204,6 +204,12 @@ integer, optional, intent(in) :: timelevel
       ntimelevel=n3
    end if
 
+!++jtb
+        write(*,*) "My copy of iop.F90 "
+        write(*,*) "Reading :",iopfile
+!--jtb
+
+
 !     
 !     Open IOP dataset
 !     
@@ -807,6 +813,13 @@ integer, optional, intent(in) :: timelevel
    endif
    call plevs0(1    ,plon   ,plev    ,ps(1,1,ntimelevel)   ,pint,pmid ,pdel)
    call shr_sys_flush( iulog )
+!++jtb
+!        write(*,*) "Vertical Motion: "
+!        write(*,*) wfld
+!!STOP
+!--jtb
+
+
 !
 ! Build interface vector for the specified omega profile
 ! (weighted average in pressure of specified level values)
