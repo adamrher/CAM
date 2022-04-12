@@ -1345,7 +1345,7 @@ contains
     use waccmx_phys_intr,   only: waccmx_phys_mspd_tend  ! WACCM-X major diffusion
     use waccmx_phys_intr,   only: waccmx_phys_ion_elec_temp_tend ! WACCM-X
     use aoa_tracers,        only: aoa_tracers_timestep_tend
-    use physconst,          only: rhoh2o
+    use physconst,          only: rhoh2o, cpair
     use aero_model,         only: aero_model_drydep
     use check_energy,       only: check_energy_chng, calc_te_and_aam_budgets
     use check_energy,       only: check_tracers_data, check_tracers_init, check_tracers_chng
@@ -1734,7 +1734,8 @@ contains
 
          call physics_ptend_init(ptend_dribble, state%psetcols, 'macmic_dribble_tend', ls= .true., lq=lq)
 
-         ptend_dribble%s(:ncol,:pver)          = (state%s(:ncol,:pver)  -   s_after_macmic(:ncol,:pver))  / ztodt
+         !ptend_dribble%s(:ncol,:pver)          = (state%s(:ncol,:pver)  -   s_after_macmic(:ncol,:pver))  / ztodt
+         ptend_dribble%s(:ncol,:pver)          = cpair * (state%t(:ncol,:pver)  -   t_after_macmic(:ncol,:pver))  / ztodt
          ptend_dribble%q(:ncol,:pver,1)        = (state%q(:ncol,:pver,1)  -   q_after_macmic(:ncol,:pver))  / ztodt
          ptend_dribble%q(:ncol,:pver,ixcldliq) = (state%q(:ncol,:pver,ixcldliq)  -  ql_after_macmic(:ncol,:pver))  / ztodt
          ptend_dribble%q(:ncol,:pver,ixcldice) = (state%q(:ncol,:pver,ixcldice)  -  qi_after_macmic(:ncol,:pver))  / ztodt
