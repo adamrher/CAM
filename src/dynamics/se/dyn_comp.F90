@@ -10,8 +10,9 @@ use constituents,           only: pcnst, cnst_get_ind, cnst_name, cnst_longname,
                                   cnst_is_a_water_species
 use cam_control_mod,        only: initial_run
 use cam_initfiles,          only: initial_file_get_id, topo_file_get_id, pertlim
-use phys_control,           only: use_gw_front, use_gw_front_igw, waccmx_is
-use dyn_grid,               only: ini_grid_name, timelevel, hvcoord, edgebuf
+use phys_control,           only: use_gw_front, use_gw_front_igw
+use dyn_grid,               only: ini_grid_name, timelevel, hvcoord, edgebuf, &
+                                  ini_grid_hdim_name
 
 use cam_grid_support,       only: cam_grid_id, cam_grid_get_gcid, &
                                   cam_grid_dimensions, cam_grid_get_dim_names, &
@@ -76,13 +77,6 @@ logical, public, protected :: write_restart_unstruct
 integer, public    :: frontgf_idx      = -1
 integer, public    :: frontga_idx      = -1
 
-! constituent indices for waccm-x dry air properties
-integer, public, protected :: &
-   ixo  = -1, &
-   ixo2 = -1, &
-   ixh  = -1, &
-   ixh2 = -1
-
 interface read_dyn_var
   module procedure read_dyn_field_2d
   module procedure read_dyn_field_3d
@@ -119,7 +113,7 @@ subroutine dyn_readnl(NLFileName)
    use control_mod,    only: sponge_del4_nu_div_fac, sponge_del4_nu_fac, sponge_del4_lev
    use dimensions_mod, only: ne, npart
    use dimensions_mod, only: lcp_moist
-   use dimensions_mod, only: hypervis_dynamic_ref_state,large_Courant_incr
+   use dimensions_mod, only: large_Courant_incr
    use dimensions_mod, only: fvm_supercycling, fvm_supercycling_jet
    use dimensions_mod, only: kmin_jet, kmax_jet
    use params_mod,     only: SFCURVE
@@ -168,7 +162,6 @@ subroutine dyn_readnl(NLFileName)
    integer                      :: se_horz_num_threads
    integer                      :: se_vert_num_threads
    integer                      :: se_tracer_num_threads
-   logical                      :: se_hypervis_dynamic_ref_state
    logical                      :: se_lcp_moist
    logical                      :: se_write_restart_unstruct
    logical                      :: se_large_Courant_incr
@@ -216,7 +209,6 @@ subroutine dyn_readnl(NLFileName)
       se_horz_num_threads,         &
       se_vert_num_threads,         &
       se_tracer_num_threads,       &
-      se_hypervis_dynamic_ref_state,&
       se_lcp_moist,                &
       se_write_restart_unstruct,   &
       se_large_Courant_incr,       &
@@ -292,7 +284,6 @@ subroutine dyn_readnl(NLFileName)
    call MPI_bcast(se_horz_num_threads, 1, MPI_integer, masterprocid, mpicom,ierr)
    call MPI_bcast(se_vert_num_threads, 1, MPI_integer, masterprocid, mpicom,ierr)
    call MPI_bcast(se_tracer_num_threads, 1, MPI_integer, masterprocid, mpicom,ierr)
-   call MPI_bcast(se_hypervis_dynamic_ref_state, 1, mpi_logical, masterprocid, mpicom, ierr)
    call MPI_bcast(se_lcp_moist, 1, mpi_logical, masterprocid, mpicom, ierr)
    call MPI_bcast(se_write_restart_unstruct, 1, mpi_logical, masterprocid, mpicom, ierr)
    call MPI_bcast(se_large_Courant_incr, 1, mpi_logical, masterprocid, mpicom, ierr)
@@ -362,7 +353,6 @@ subroutine dyn_readnl(NLFileName)
    vert_remap_uvTq_alg      = set_vert_remap(se_vert_remap_T, se_vert_remap_uvTq_alg)
    vert_remap_tracer_alg    = set_vert_remap(se_vert_remap_T, se_vert_remap_tracer_alg)
    fv_nphys                 = se_fv_nphys
-   hypervis_dynamic_ref_state = se_hypervis_dynamic_ref_state
    lcp_moist                = se_lcp_moist
    large_Courant_incr       = se_large_Courant_incr
    fvm_supercycling         = se_fvm_supercycling
@@ -461,7 +451,6 @@ subroutine dyn_readnl(NLFileName)
       write(iulog, '(a,a)')    'dyn_readnl: se_vert_remap_T               = ',trim(se_vert_remap_T)
       write(iulog, '(a,a)')    'dyn_readnl: se_vert_remap_uvTq_alg        = ',trim(se_vert_remap_uvTq_alg)
       write(iulog, '(a,a)')    'dyn_readnl: se_vert_remap_tracer_alg      = ',trim(se_vert_remap_tracer_alg)
-      write(iulog, '(a,l4)')   'dyn_readnl: se_hypervis_dynamic_ref_state = ',hypervis_dynamic_ref_state
       write(iulog, '(a,l4)')   'dyn_readnl: lcp_moist                     = ',lcp_moist
       write(iulog, '(a,i0)')   'dyn_readnl: se_fvm_supercycling           = ',fvm_supercycling
       write(iulog, '(a,i0)')   'dyn_readnl: se_fvm_supercycling_jet       = ',fvm_supercycling_jet
@@ -596,7 +585,7 @@ subroutine dyn_init(dyn_in, dyn_out)
    use dyn_grid,           only: elem, fvm
    use cam_pio_utils,      only: clean_iodesc_list
    use physconst,          only: thermodynamic_active_species_num, thermodynamic_active_species_idx
-   use physconst,          only: thermodynamic_active_species_idx_dycore, rair, cpair
+   use physconst,          only: thermodynamic_active_species_idx_dycore, rair, cpair, pstd
    use physconst,          only: thermodynamic_active_species_liq_idx,thermodynamic_active_species_ice_idx
    use physconst,          only: thermodynamic_active_species_liq_idx_dycore,thermodynamic_active_species_ice_idx_dycore
    use physconst,          only: thermodynamic_active_species_liq_num, thermodynamic_active_species_ice_num
@@ -799,16 +788,15 @@ subroutine dyn_init(dyn_in, dyn_out)
           (hvcoord%hyam(:)+hvcoord%hybm(:))*hvcoord%ps0,km_sponge_factor,&
           kmvis_ref,kmcnd_ref,rho_ref)
 
+     write(iulog,*) "Molecular viscoity and thermal conductivity reference profile"
+     write(iulog,*) "k, p, z, km_sponge_factor, kmvis_ref/rho_ref, kmcnd_ref/(cp*rho_ref):"
      do k=1,nlev
        ! only apply molecular viscosity where viscosity is > 1000 m/s^2
        if (MIN(kmvis_ref(k)/rho_ref(k),kmcnd_ref(k)/(cpair*rho_ref(k)))>1000.0_r8) then
          if (masterproc) then
-           press = (hvcoord%hyam(k)+hvcoord%hybm(k))*hvcoord%ps0
+           press = hvcoord%hyam(k)*hvcoord%ps0+hvcoord%hybm(k)*pstd
            call std_atm_height(press,z)
-           write(iulog,'(a,i3,3e11.4)') "k, p, z, km_sponge_factor                   :",k, &
-                press, z,km_sponge_factor(k)
-            write(iulog,'(a,2e11.4)') "kmvis_ref/rho_ref, kmcnd_ref/(cp*rho_ref): ", &
-               kmvis_ref(k)/rho_ref(k),kmcnd_ref(k)/(cpair*rho_ref(k))
+           write(iulog,'(i3,5e11.4)') k,press, z,km_sponge_factor(k),kmvis_ref(k)/rho_ref(k),kmcnd_ref(k)/(cpair*rho_ref(k))
          end if
          kmol_end = k
        else
@@ -830,28 +818,39 @@ subroutine dyn_init(dyn_in, dyn_out)
    !
    nu_scale_top(:) = 0.0_r8
    if (nu_top>0) then
-     if (masterproc) write(iulog,*) sub//": sponge layer viscosity scaling factor"
-     do k=1,nlev
-       press = (hvcoord%hyam(k)+hvcoord%hybm(k))*hvcoord%ps0
-       ptop  = hvcoord%hyai(1)*hvcoord%ps0
-       nu_scale_top(k) = 8.0_r8*(1.0_r8+tanh(1.0_r8*log(ptop/press(1)))) ! tau will be maximum 8 at model top
-       if (nu_scale_top(k).ge.0.15_r8) then
-         ksponge_end = k
-       else
-         nu_scale_top(k) = 0.0_r8
-       end if
-     end do
+     ptop  = hvcoord%hyai(1)*hvcoord%ps0
+     if (ptop>300.0_r8) then
+       !
+       ! for low tops the tanh formulae below makes the sponge excessively deep
+       !
+       nu_scale_top(1) = 4.0_r8
+       nu_scale_top(2) = 2.0_r8
+       nu_scale_top(3) = 1.0_r8
+       ksponge_end = 3
+     else
+       do k=1,nlev
+         press = hvcoord%hyam(k)*hvcoord%ps0+hvcoord%hybm(k)*pstd
+         nu_scale_top(k) = 8.0_r8*(1.0_r8+tanh(1.0_r8*log(ptop/press(1)))) ! tau will be maximum 8 at model top
+         if (nu_scale_top(k).ge.0.15_r8) then
+           ksponge_end = k
+         else
+           nu_scale_top(k) = 0.0_r8
+         end if
+       end do
+     end if
    else
      ksponge_end = 0
    end if
    ksponge_end = MAX(MAX(ksponge_end,1),kmol_end)
    if (masterproc) then
      write(iulog,*) sub//": ksponge_end = ",ksponge_end
+     write(iulog,*) sub//": sponge layer Laplacian damping"
+     write(iulog,*) "k, p, z, nu_scale_top, nu (actual Laplacian damping coefficient)"
      if (nu_top>0) then
        do k=1,ksponge_end+1
          press = (hvcoord%hyam(k)+hvcoord%hybm(k))*hvcoord%ps0
          call std_atm_height(press,z)
-         write(iulog,'(a,i3,4e11.4)') sub//": k, p, z, nu_scale_top, nu ",k,press,z,&
+         write(iulog,'(i3,4e11.4)') k,press,z,&
               nu_scale_top(k),nu_scale_top(k)*nu_top
        end do
      end if
@@ -951,14 +950,6 @@ subroutine dyn_init(dyn_in, dyn_out)
       call add_default(tottnam(       1), budget_hfile_num, ' ')
       call add_default(tottnam(ixcldliq), budget_hfile_num, ' ')
       call add_default(tottnam(ixcldice), budget_hfile_num, ' ')
-   end if
-
-   ! constituent indices for waccm-x
-   if ( waccmx_is('ionosphere') .or. waccmx_is('neutral') ) then
-      call cnst_get_ind('O',  ixo)
-      call cnst_get_ind('O2', ixo2)
-      call cnst_get_ind('H',  ixh)
-      call cnst_get_ind('H2', ixh2)
    end if
 
    call test_mapping_addfld
@@ -1201,7 +1192,7 @@ subroutine read_inidat(dyn_in)
    integer                          :: kptr, m_cnst
    type(EdgeBuffer_t)               :: edge
 
-   character(len=max_fieldname_len) :: dimname, varname
+   character(len=max_fieldname_len) :: varname
    integer                          :: ierr
 
    integer                          :: rndm_seed_sz
@@ -1351,7 +1342,7 @@ subroutine read_inidat(dyn_in)
       allocate(dbuf3(npsq,nlev,nelemd))
 
       ! Check that columns in IC file match grid definition.
-      call check_file_layout(fh_ini, elem, dyn_cols, 'ncdata', .true., dimname)
+      call check_file_layout(fh_ini, elem, dyn_cols, 'ncdata', .true.)
 
       ! Read 2-D field
 
@@ -1359,10 +1350,10 @@ subroutine read_inidat(dyn_in)
       fieldname2 = 'PSDRY'
       if (dyn_field_exists(fh_ini, trim(fieldname), required=.false.)) then
          inic_wet = .true.
-         call read_dyn_var(trim(fieldname), fh_ini, dimname, dbuf2)
+         call read_dyn_var(trim(fieldname), fh_ini, ini_grid_hdim_name, dbuf2)
       elseif (dyn_field_exists(fh_ini, trim(fieldname2), required=.false.)) then
          inic_wet = .false.
-         call read_dyn_var(trim(fieldname2), fh_ini, dimname, dbuf2)
+         call read_dyn_var(trim(fieldname2), fh_ini, ini_grid_hdim_name, dbuf2)
       else
          call endrun(trim(sub)//': PS or PSDRY must be on GLL grid')
       end if
@@ -1386,7 +1377,7 @@ subroutine read_inidat(dyn_in)
       ! Read in 3-D fields
 
       if (dyn_field_exists(fh_ini, 'U')) then
-         call read_dyn_var('U', fh_ini, dimname, dbuf3)
+         call read_dyn_var('U', fh_ini, ini_grid_hdim_name, dbuf3)
       else
          call endrun(trim(sub)//': U not found')
       end if
@@ -1402,7 +1393,7 @@ subroutine read_inidat(dyn_in)
       end do
 
       if (dyn_field_exists(fh_ini, 'V')) then
-         call read_dyn_var('V', fh_ini, dimname, dbuf3)
+         call read_dyn_var('V', fh_ini, ini_grid_hdim_name, dbuf3)
       else
          call endrun(trim(sub)//': V not found')
       end if
@@ -1417,7 +1408,7 @@ subroutine read_inidat(dyn_in)
       end do
 
       if (dyn_field_exists(fh_ini, 'T')) then
-         call read_dyn_var('T', fh_ini, dimname, dbuf3)
+         call read_dyn_var('T', fh_ini, ini_grid_hdim_name, dbuf3)
       else
          call endrun(trim(sub)//': T not found')
       end if
@@ -1494,7 +1485,7 @@ subroutine read_inidat(dyn_in)
    do m_cnst = 1, pcnst
       if (cnst_read_iv(m_cnst) .and. .not. cnst_is_a_water_species(cnst_name(m_cnst))) then
          if (dyn_field_exists(fh_ini, trim(cnst_name(m_cnst)), required=.false.)) then
-            call check_file_layout(fh_ini, elem, dyn_cols, 'ncdata', .true., dimname)
+            call check_file_layout(fh_ini, elem, dyn_cols, 'ncdata', .true.)
             exit
          end if
       end if
@@ -1512,7 +1503,7 @@ subroutine read_inidat(dyn_in)
       end if
 
       if (found) then
-         call read_dyn_var(trim(cnst_name(m_cnst)), fh_ini, dimname, dbuf3)
+         call read_dyn_var(trim(cnst_name(m_cnst)), fh_ini, ini_grid_hdim_name, dbuf3)
       else
          call cnst_init_default(m_cnst, latvals, lonvals, dbuf3, pmask)
       end if
@@ -2015,7 +2006,7 @@ end subroutine set_phis
 
 !========================================================================================
 
-subroutine check_file_layout(file, elem, dyn_cols, file_desc, dyn_ok, dimname)
+subroutine check_file_layout(file, elem, dyn_cols, file_desc, dyn_ok)
 
    ! This routine is only called when data will be read from the initial file.  It is not
    ! called when the initial file is only supplying vertical coordinate info.
@@ -2025,7 +2016,6 @@ subroutine check_file_layout(file, elem, dyn_cols, file_desc, dyn_ok, dimname)
    integer,           intent(in)    :: dyn_cols
    character(len=*),  intent(in)    :: file_desc
    logical,           intent(in)    :: dyn_ok ! .true. iff ncol_d is okay
-   character(len=*),  intent(out)   :: dimname
 
    integer                          :: ncol_did, ncol_size
    integer                          :: ierr
@@ -2034,18 +2024,20 @@ subroutine check_file_layout(file, elem, dyn_cols, file_desc, dyn_ok, dimname)
    integer                          :: indx
    real(r8)                         :: dbuf2(npsq, nelemd)
    logical                          :: found
-   character(len=max_fieldname_len) :: dimname2, coordname
+   character(len=max_fieldname_len) :: coordname
 
    character(len=*), parameter      :: sub = 'check_file_layout'
    !----------------------------------------------------------------------------
 
    ! Check that number of columns in IC file matches grid definition.
+   if (trim(ini_grid_hdim_name) == 'none') then
+      call endrun(sub//': ERROR: no horizontal dimension in initial data file. &
+         &Cannot read data from file')
+   end if
 
-   call cam_grid_get_dim_names(cam_grid_id(ini_grid_name), dimname, dimname2)
-
-   ierr = pio_inq_dimid(file, trim(dimname), ncol_did)
+   ierr = pio_inq_dimid(file, trim(ini_grid_hdim_name), ncol_did)
    if (ierr /= PIO_NOERR) then
-      call endrun(sub//': ERROR: either ncol or ncol_d dimension not found in ' &
+      call endrun(sub//': ERROR: '//trim(ini_grid_hdim_name)//' dimension not found in ' &
          //trim(file_desc)//' file')
    end if
 
@@ -2055,18 +2047,18 @@ subroutine check_file_layout(file, elem, dyn_cols, file_desc, dyn_ok, dimname)
          write(iulog, '(a,2(a,i0))') trim(sub), ': ncol_size=', ncol_size, &
              ' : dyn_cols=', dyn_cols
       end if
-      call endrun(sub//': ERROR: dimension ncol size not same as in ncdata file')
+      call endrun(sub//': ERROR: dimension '//trim(ini_grid_hdim_name)//' size not same as in ncdata file')
    end if
 
-   ! Set coordinate name associated with dimname.
-   if (dimname == 'ncol') then
+   ! Set coordinate name associated with ini_grid_hdim_name.
+   if (trim(ini_grid_hdim_name) == 'ncol') then
       coordname = 'lat'
    else
       coordname = 'lat_d'
    end if
 
    !! Check to make sure file is in correct order
-   call read_dyn_var(coordname, file, dimname, dbuf2)
+   call read_dyn_var(coordname, file, ini_grid_hdim_name, dbuf2)
    found = .true.
    do ie = 1, nelemd
       indx = 1
@@ -2092,13 +2084,13 @@ subroutine check_file_layout(file, elem, dyn_cols, file_desc, dyn_ok, dimname)
       call endrun("ncdata file latitudes not in correct column order")
    end if
 
-   if (dimname == 'ncol') then
+   if (trim(ini_grid_hdim_name) == 'ncol') then
       coordname = 'lon'
    else
       coordname = 'lon_d'
    end if
 
-   call read_dyn_var(coordname, file, dimname, dbuf2)
+   call read_dyn_var(coordname, file, ini_grid_hdim_name, dbuf2)
    do ie = 1, nelemd
       indx = 1
       do j = 1, np

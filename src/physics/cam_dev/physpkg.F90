@@ -1377,7 +1377,7 @@ contains
     use subcol_SILHS,       only: subcol_SILHS_var_covar_driver
     use subcol_SILHS,       only: subcol_SILHS_fill_holes_conserv
     use subcol_SILHS,       only: subcol_SILHS_hydromet_conc_tend_lim
-    use micro_mg_cam,       only: massless_droplet_destroyer
+    use micro_pumas_cam,       only: massless_droplet_destroyer
     use convect_deep,       only: convect_deep_tend_2, deep_scheme_does_scav_trans
     use cloud_diagnostics,  only: cloud_diagnostics_calc
     use radiation,          only: radiation_tend
@@ -2445,6 +2445,7 @@ contains
     ! FV: convert dry-type mixing ratios to moist here because physics_dme_adjust
     !     assumes moist. This is done in p_d_coupling for other dynamics. Bundy, Feb 2004.
     moist_mixing_ratio_dycore = dycore_is('LR').or. dycore_is('FV3')  
+    if (moist_mixing_ratio_dycore) call set_dry_to_wet(state)    ! Physics had dry, dynamics wants moist
 
     ! Scale dry mass and energy (does nothing if dycore is EUL or SLD)
     tmp_q     (:ncol,:pver) = state%q(:ncol,:pver,ixq)
