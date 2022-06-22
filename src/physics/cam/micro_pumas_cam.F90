@@ -83,8 +83,6 @@ real(r8) :: micro_mg_max_nicons        = unset_r8  ! max allowed ice number conc
 logical, public :: do_cldliq ! Prognose cldliq flag
 logical, public :: do_cldice ! Prognose cldice flag
 
-integer :: num_steps ! Number of MG substeps
-
 integer :: ncnst = 4       ! Number of constituents
 
 ! Namelist variables for option to specify constant cloud droplet/ice number
@@ -251,7 +249,6 @@ subroutine micro_pumas_cam_readnl(nlfile)
   ! Namelist variables
   logical :: micro_mg_do_cldice = .true. ! do_cldice = .true., MG microphysics is prognosing cldice
   logical :: micro_mg_do_cldliq = .true. ! do_cldliq = .true., MG microphysics is prognosing cldliq
-  integer :: micro_mg_num_steps = 1      ! Number of substepping iterations done by MG (1.5 only for now).
 
 
   ! Local variables
@@ -292,7 +289,6 @@ subroutine micro_pumas_cam_readnl(nlfile)
      ! set local variables
      do_cldice = micro_mg_do_cldice
      do_cldliq = micro_mg_do_cldliq
-     num_steps = micro_mg_num_steps
 
      ! Verify that version numbers are valid.
      select case (micro_mg_version)
@@ -355,8 +351,8 @@ subroutine micro_pumas_cam_readnl(nlfile)
   call mpi_bcast(do_cldliq, 1, mpi_logical, mstrid, mpicom, ierr)
   if (ierr /= 0) call endrun(sub//": FATAL: mpi_bcast: do_cldliq")
 
-  call mpi_bcast(num_steps, 1, mpi_integer, mstrid, mpicom, ierr)
-  if (ierr /= 0) call endrun(sub//": FATAL: mpi_bcast: num_steps")
+  call mpi_bcast(micro_mg_num_steps, 1, mpi_integer, mstrid, mpicom, ierr)
+  if (ierr /= 0) call endrun(sub//": FATAL: mpi_bcast: micro_mg_num_steps")
 
   call mpi_bcast(microp_uniform, 1, mpi_logical, mstrid, mpicom, ierr)
   if (ierr /= 0) call endrun(sub//": FATAL: mpi_bcast: microp_uniform")
@@ -484,7 +480,7 @@ subroutine micro_pumas_cam_readnl(nlfile)
      write(iulog,*) '  micro_mg_sub_version        = ', micro_mg_sub_version
      write(iulog,*) '  micro_mg_do_cldice          = ', do_cldice
      write(iulog,*) '  micro_mg_do_cldliq          = ', do_cldliq
-     write(iulog,*) '  micro_mg_num_steps          = ', num_steps
+     write(iulog,*) '  micro_mg_num_steps          = ', micro_mg_num_steps
      write(iulog,*) '  microp_uniform              = ', microp_uniform
      write(iulog,*) '  micro_mg_dcs                = ', micro_mg_dcs
      write(iulog,*) '  micro_mg_berg_eff_factor    = ', micro_mg_berg_eff_factor
@@ -860,7 +856,7 @@ subroutine micro_pumas_cam_init(pbuf2d)
            write(iulog,*) "MG prognostic cloud liquid has been turned off via namelist."
       if (.not. do_cldice) &
            write(iulog,*) "MG prognostic cloud ice has been turned off via namelist."
-      write(iulog,*) "Number of microphysics substeps is: ",num_steps
+      write(iulog,*) "Number of microphysics substeps is: ",micro_mg_num_steps
    end if
 
    select case (micro_mg_version)
@@ -2262,14 +2258,14 @@ subroutine micro_pumas_cam_tend(state, ptend, dtime, pbuf)
    frzcnt(:ncol,:top_lev-1)=0._r8
    frzdep(:ncol,:top_lev-1)=0._r8
 
-   do it = 1, num_steps
+   do it = 1, micro_mg_num_steps
 
       select case (micro_mg_version)
       case (1)
          select case (micro_mg_sub_version)
          case (0)
             call micro_mg_tend1_0( &
-                 microp_uniform, ncol, nlev, ncol, 1, dtime/num_steps, &
+                 microp_uniform, ncol, nlev, ncol, 1, dtime/micro_mg_num_steps, &
                  state_loc%t(:ncol,top_lev:), state_loc%q(:ncol,top_lev:,ixq), state_loc%q(:ncol,top_lev:,ixcldliq), &
                  state_loc%q(:ncol,top_lev:,ixcldice), state_loc%q(:ncol,top_lev:,ixnumliq),     &
                  state_loc%q(:ncol,top_lev:,ixnumice), state_loc%pmid(:ncol,top_lev:),  state_loc%pdel(:ncol,top_lev:), &
@@ -2310,7 +2306,7 @@ subroutine micro_pumas_cam_tend(state, ptend, dtime, pbuf)
          end select
       case(2:3)
          call micro_pumas_tend( &
-              ncol,         nlev,           dtime/num_steps,&
+              ncol,         nlev,           dtime/micro_mg_num_steps,&
               state_loc%t(:ncol,top_lev:),              state_loc%q(:ncol,top_lev:,ixq),            &
               state_loc%q(:ncol,top_lev:,ixcldliq),     state_loc%q(:ncol,top_lev:,ixcldice),          &
               state_loc%q(:ncol,top_lev:,ixnumliq),     state_loc%q(:ncol,top_lev:,ixnumice),       &
@@ -2418,12 +2414,12 @@ subroutine micro_pumas_cam_tend(state, ptend, dtime, pbuf)
       call physics_ptend_sum(ptend_loc, ptend, ncol)
 
       ! Update local state
-      call physics_update(state_loc, ptend_loc, dtime/num_steps)
+      call physics_update(state_loc, ptend_loc, dtime/micro_mg_num_steps)
 
    end do
 
    ! Divide ptend by substeps.
-   call physics_ptend_scale(ptend, 1._r8/num_steps, ncol)
+   call physics_ptend_scale(ptend, 1._r8/micro_mg_num_steps, ncol)
 
    ! Check to make sure that the microphysics code is respecting the flags that control
    ! whether MG should be prognosing cloud ice and cloud liquid or not.
