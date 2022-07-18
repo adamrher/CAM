@@ -104,7 +104,7 @@ end subroutine ref_pres_readnl
 !====================================================================================
 
 subroutine ref_pres_init(pref_edge_in, pref_mid_in, num_pr_lev_in)
-
+   use scamMod,only: single_column
    ! Initialize reference pressures
 
    ! arguments
@@ -133,7 +133,11 @@ subroutine ref_pres_init(pref_edge_in, pref_mid_in, num_pr_lev_in)
    ! Find level corresponding to the molecular diffusion bottom.
 !+++ARH
    !do_molec_diff = (ptop_ref < do_molec_press)
-   do_molec_diff = .false.
+   if (single_column) then 
+     do_molec_diff = .false.
+   else
+     do_molec_diff = (ptop_ref < do_molec_press)
+   end if
 !---ARH
    if (do_molec_diff) then
       nbot_molec = press_lim_idx(molec_diff_bot_press, &
