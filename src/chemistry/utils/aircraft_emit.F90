@@ -208,7 +208,10 @@ contains
           !-----------------------------------------------------------------------
           forcings_air(m)%file%stepTime    = .true.  ! Aircraft data is not to be interpolated in time
           forcings_air(m)%file%cyclical_list    = .true.  ! Aircraft data cycles over the filename list
-          forcings_air(m)%file%weight_by_lat     = .true.  ! Aircraft data -  interpolated with latitude weighting
+!+++ARH
+          !forcings_air(m)%file%weight_by_lat     = .true.  ! Aircraft data -  interpolated with latitude weighting
+          forcings_air(m)%file%weight_by_lat     = .false.
+!---ARH
           forcings_air(m)%file%conserve_column = .true. ! Aircraft data - vertically interpolated to conserve the total column
           forcings_air(m)%file%dist = dist(m)
           forcings_air(m)%species          = spc_name

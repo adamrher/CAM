@@ -20,9 +20,9 @@ set case_lon = "$argv[$n]"
 set n = 3
 set loc_string = "$argv[$n]"
 
-set src=cam.clubbmf
-set srcpath=/home/$USER/src
-set scratchdir=/scratch/cluster/$USER
+set src=cam.clubbmf.bsort
+set srcpath=/glade/u/home/$USER/src/CLUBB-MF/
+set scratchdir=/glade/scratch/$USER/
 set COMPSET=FSCAM
 
 set case_year = 2010
@@ -41,15 +41,15 @@ set loo = `echo $case_lon | cut -d '.' -f 1`
 echo $loo
 
 # set basecase name
-set CASE="${src}_${COMPSET}_L58dev_CAMFORC_${loc_string}_${case_date}_c`date '+%y%m%d'`_100nup_100a3b3alph_nozm"
+set CASE="${src}_${COMPSET}_L58dev_CAMFORC_${loc_string}_${case_date}_c`date '+%y%m%d'`_100nup_3a05b3alph"
 
 # create new basecase
-${srcpath}/${src}/cime/scripts/create_newcase --case ${scratchdir}/${CASE} --compset ${COMPSET} --res T42_T42 --user-mods-dir ${srcpath}/${src}/cime_config/usermods_dirs/scam_STUB --walltime 01:00:00 --mach izumi --pecount 1 --compiler intel --driver mct --queue short --run-unsupported
+${srcpath}/${src}/cime/scripts/create_newcase --case ${scratchdir}/${CASE} --compset ${COMPSET} --res T42_T42 --user-mods-dir ${srcpath}/${src}/cime_config/usermods_dirs/scam_STUB --walltime 02:00:00 --mach cheyenne --pecount 1 --compiler intel --driver mct --queue share --run-unsupported
 
 cd ${scratchdir}/${CASE}
 
-sed -i 's/intel\/18.0.3/intel\/20.0.1/' ./env_mach_specific.xml
-sed -i 's/intel\/mvapich2-2.3rc2-intel-18.0.3/intel\/mvapich2-2.1-qlc/' ./env_mach_specific.xml
+#sed -i 's/intel\/18.0.3/intel\/20.0.1/' ./env_mach_specific.xml
+#sed -i 's/intel\/mvapich2-2.3rc2-intel-18.0.3/intel\/mvapich2-2.1-qlc/' ./env_mach_specific.xml
 ./case.setup 
 
 #./xmlchange DEBUG=TRUE
@@ -99,9 +99,9 @@ echo "do_clubb_mf_rad = .true.">>user_nl_cam
 
 echo "clubb_mf_nup = 100">>user_nl_cam
 echo "clubb_mf_L0 = 50.D0">>user_nl_cam
-echo "clubb_mf_Lopt = 7">>user_nl_cam
-echo "clubb_mf_a0 = 100.D0">>user_nl_cam
-echo "clubb_mf_b0 = 1.D0">>user_nl_cam
+echo "clubb_mf_Lopt = 6">>user_nl_cam
+echo "clubb_mf_a0 = 3.D0">>user_nl_cam
+echo "clubb_mf_b0 = 0.5D0">>user_nl_cam
 echo "clubb_mf_alphturb = 3.D0">>user_nl_cam
 
 #Set case specific variables
@@ -118,6 +118,6 @@ ncap2 --overwrite -s "lon[lon]=${case_lon}" STUB_iop.nc STUB_iop.nc
 pwd
 
 echo "READY TO BUILD/SUBMIT "${CASE}
-./case.build
+qcmd -- ./case.build
 ./case.submit
 exit

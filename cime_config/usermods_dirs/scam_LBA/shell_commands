@@ -9,7 +9,7 @@
 ./xmlchange RUN_STARTDATE=1999-02-23
 ./xmlchange START_TOD=0
 ./xmlchange STOP_OPTION=nminutes
-./xmlchange STOP_N=590
+./xmlchange STOP_N=570
 
 # usermods_dir/scam_mandatory will be included for all single column
 # runs by default.  This usermods directory contains mandatory settings
