@@ -2173,7 +2173,7 @@ sub write_filepath
     }
 
     if ($phys_pkg eq 'cam_dev') {
-	print $fh "$camsrcdir/src/physics/pumas\n";
+	print $fh "$camsrcdir/src/physics/pumas-frozen\n";
     } else {
 	print $fh "$camsrcdir/src/physics/pumas-frozen\n";
     }
