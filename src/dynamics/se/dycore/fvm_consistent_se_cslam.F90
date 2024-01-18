@@ -44,7 +44,10 @@ contains
     use thread_mod            , only: vert_num_threads, omp_set_nested
     implicit none
     type (element_t)      , intent(inout) :: elem(:)
-    type (fvm_struct)     , intent(inout) :: fvm(:)
+!+++ARH
+    !type (fvm_struct)     , intent(inout) :: fvm(:)
+    type (fvm_struct), target , intent(inout) :: fvm(:)
+!---ARH
     type (hybrid_t)       , intent(in)    :: hybrid   ! distributed parallel structure (shared)
     type (TimeLevel_t)    , intent(in)    :: tl              ! time level struct
     type (hvcoord_t)      , intent(in)    :: hvcoord
@@ -71,7 +74,11 @@ contains
     integer :: region_num_threads
     logical :: inJetCall
     logical :: ActiveJetThread
-  
+ 
+!+++ARH
+    real(r8), pointer :: fcube(:,:,:,:)
+    real(r8), pointer :: spherecentroid(:,:,:)
+!---ARH
 
     llimiter = .true.
 
@@ -152,18 +159,36 @@ contains
 
     !call t_stopf('fvm:orthogonal_swept_areas')
     do ie=nets,nete
+!+++ARH
+       ! Intel compiler version 2023.0.0 on derecho had significant slowdown on subroutine interface without
+       ! these pointers.  
+      fcube => fvm(ie)%c(:,:,:,:)
+      spherecentroid => fvm(ie)%spherecentroid(:,1-nhe:nc+nhe,1-nhe:nc+nhe)
+!---ARH
       do k=kmin,kmax
         !call t_startf('fvm:tracers_reconstruct')
-        call reconstruction(fvm(ie)%c(:,:,:,:),nlev,k,&
+!+++ARH
+        !call reconstruction(fvm(ie)%c(:,:,:,:),nlev,k,&
+        !     ctracer(:,:,:,:),irecons_tracer,llimiter,ntrac,&
+        !     nc,nhe,nhr,nhc,nht,ns,nhr+(nhe-1),&
+        !     fvm(ie)%jx_min,fvm(ie)%jx_max,fvm(ie)%jy_min,fvm(ie)%jy_max,&
+        !     fvm(ie)%cubeboundary,fvm(ie)%halo_interp_weight,fvm(ie)%ibase,&
+        !     fvm(ie)%spherecentroid(:,1-nhe:nc+nhe,1-nhe:nc+nhe),&
+        !     fvm(ie)%recons_metrics,fvm(ie)%recons_metrics_integral,&
+        !     fvm(ie)%rot_matrix,fvm(ie)%centroid_stretch,&
+        !     fvm(ie)%vertex_recons_weights,fvm(ie)%vtx_cart,&
+        !     irecons_tracer_lev(k))
+         call reconstruction(fcube,nlev,k,&
              ctracer(:,:,:,:),irecons_tracer,llimiter,ntrac,&
              nc,nhe,nhr,nhc,nht,ns,nhr+(nhe-1),&
              fvm(ie)%jx_min,fvm(ie)%jx_max,fvm(ie)%jy_min,fvm(ie)%jy_max,&
              fvm(ie)%cubeboundary,fvm(ie)%halo_interp_weight,fvm(ie)%ibase,&
-             fvm(ie)%spherecentroid(:,1-nhe:nc+nhe,1-nhe:nc+nhe),&
+             spherecentroid,&
              fvm(ie)%recons_metrics,fvm(ie)%recons_metrics_integral,&
              fvm(ie)%rot_matrix,fvm(ie)%centroid_stretch,&
              fvm(ie)%vertex_recons_weights,fvm(ie)%vtx_cart,&
              irecons_tracer_lev(k))
+!---ARH
         !call t_stopf('fvm:tracers_reconstruct')
         !call t_startf('fvm:swept_flux')
         call swept_flux(elem(ie),fvm(ie),k,ctracer,irecons_tracer_lev(k),gsweights,gspts)
