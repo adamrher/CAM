@@ -230,11 +230,6 @@
   <!-- CAM aquaplanet compsets -->
 
   <compset>
-    <alias>QPC3</alias>
-    <lname>2000_CAM30_SLND_SICE_DOCN%AQP3_SROF_SGLC_SWAV</lname>
-  </compset>
-
-  <compset>
     <alias>QPC4</alias>
     <lname>2000_CAM40_SLND_SICE_DOCN%AQP3_SROF_SGLC_SWAV</lname>
   </compset>
@@ -901,6 +896,12 @@
         <value  compset="CAM.*%SCAMTOGA2">154.69</value>
         <value  compset="CAM.*%SCAMTWP06">130.89</value>
         <value  compset="CAM.*%SCAMCAMFRC">262.5</value>
+      </values>
+    </entry>
+
+    <entry id="LND_SETS_DUST_EMIS_DRV_FLDS">
+      <values match="first">
+	<value compset="_CAM7.*_CLM6">FALSE</value>
       </values>
     </entry>
 
