@@ -62,8 +62,8 @@ Option to turn on extended non-LTE CO2 cooling: 0 => no, 1 => yes
 <entry id="ionosphere" valid_values="none,wxie" value="none">
 Ionosphere model used in WACCMX.
 </entry>
-<entry id="phys" valid_values="cam4,cam5,cam6,cam7,held_suarez,adiabatic,kessler,tj2016,grayrad" value="">
-Physics package: cam4, cam5, cam6, cam7, held_suarez, adiabatic, kessler, tj2016, grayrad.
+<entry id="phys" valid_values="cam4,cam5,cam6,cam7,held_suarez,adiabatic,kessler,tj2016,grayrad,data_trop" value="">
+Physics package: cam4, cam5, cam6, cam7, held_suarez, adiabatic, kessler, tj2016, grayrad, data_trop.
 </entry>
 <entry id="hemco" valid_values="0,1" value="0">
 Switch to turn on Harmonized Emissions Component (HEMCO) for chemistry: 0 => no, 1 => yes.
