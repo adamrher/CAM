@@ -263,7 +263,7 @@ subroutine nucleate_ice_cam_init(mincld_in, bulk_scale_in, pbuf2d, aero_props)
      call endrun(routine//': ERROR qsatfac is required when subgrid = -1 or subgrid_strat = -1')
    end if
 
-   if (cam_physpkg_is("cam7")) then
+   if (cam_physpkg_is("cam7") .or. cam_physpkg_is("data_trop")) then
       ! Updates for PUMAS v1.21+
       call addfld('NIHFTEN',  (/ 'lev' /), 'A', '1/m3/s', 'Activated Ice Number Concentration tendency due to homogenous freezing', sampled_on_subcycle=.true.)
       call addfld('NIDEPTEN', (/ 'lev' /), 'A', '1/m3/s', 'Activated Ice Number Concentration tendency due to deposition nucleation', sampled_on_subcycle=.true.)
@@ -288,7 +288,7 @@ subroutine nucleate_ice_cam_init(mincld_in, bulk_scale_in, pbuf2d, aero_props)
       call addfld ('WICE',     (/ 'lev' /), 'A','m/s','Vertical velocity Reduction caused by preexisting ice', sampled_on_subcycle=.true.)
       call addfld ('WEFF',     (/ 'lev' /), 'A','m/s','Effective Vertical velocity for ice nucleation', sampled_on_subcycle=.true.)
 
-      if (cam_physpkg_is("cam7")) then
+      if (cam_physpkg_is("cam7") .or. cam_physpkg_is("data_trop")) then
          ! Updates for PUMAS v1.21+
          call addfld ('INnso4TEN',   (/ 'lev' /), 'A','1/m3/s','Number Concentration tendency so4 (in) to ice_nucleation', sampled_on_subcycle=.true.)
          call addfld ('INnbcTEN',    (/ 'lev' /), 'A','1/m3/s','Number Concentration tendency bc  (in) to ice_nucleation', sampled_on_subcycle=.true.)
@@ -658,7 +658,7 @@ subroutine nucleate_ice_cam_calc( &
             ! *** Turn off soot nucleation ***
             soot_num = 0.0_r8
 
-            if (cam_physpkg_is("cam7")) then
+            if (cam_physpkg_is("cam7") .or. cam_physpkg_is("data_trop")) then
 
                call nucleati( &
                     wsubi(i,k), t(i,k), pmid(i,k), relhum(i,k), icldm(i,k),   &
@@ -797,7 +797,7 @@ subroutine nucleate_ice_cam_calc( &
                end if
             end if
 
-            if (cam_physpkg_is("cam7")) then
+            if (cam_physpkg_is("cam7") .or. cam_physpkg_is("data_trop")) then
                !Updates for pumas v1.21+
 
                naai_hom(i,k) = nihf(i,k)/dtime
@@ -886,7 +886,7 @@ subroutine nucleate_ice_cam_calc( &
            maerosol)
    end if
 
-   if (cam_physpkg_is("cam7")) then
+   if (cam_physpkg_is("cam7") .or. cam_physpkg_is("data_trop")) then
       ! Updates for PUMAS v1.21+
       call outfld('NIHFTEN',   nihf, pcols, lchnk)
       call outfld('NIIMMTEN', niimm, pcols, lchnk)
@@ -906,7 +906,7 @@ subroutine nucleate_ice_cam_calc( &
       call outfld( 'fhom' , fhom, pcols, lchnk)
       call outfld( 'WICE' , wice, pcols, lchnk)
       call outfld( 'WEFF' , weff, pcols, lchnk)
-      if (cam_physpkg_is("cam7")) then
+      if (cam_physpkg_is("cam7") .or. cam_physpkg_is("data_trop")) then
          ! Updates for PUMAS v1.21+
          call outfld('INnso4TEN',INnso4 , pcols,lchnk)
          call outfld('INnbcTEN',INnbc  , pcols,lchnk)

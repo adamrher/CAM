@@ -1023,7 +1023,7 @@ subroutine vertical_diffusion_tend( &
           pverp             = pverp,                      &
           pcnst             = pcnst,                      &
           const_props       = ccpp_const_props,           &
-          apply_nonwv_cflx  = (.not. cam_physpkg_is("cam7")), & ! does vertical diffusion apply ANY fluxes?
+          apply_nonwv_cflx  = (.not. (cam_physpkg_is("cam7") .or. cam_physpkg_is("data_trop"))), & ! does vertical diffusion apply ANY fluxes?
           cflx_from_coupler = cam_in%cflx(:ncol,:pcnst),  &
           ! below output
           taux              = taux(:ncol),                & ! these are zero since handled by CLUBB.
