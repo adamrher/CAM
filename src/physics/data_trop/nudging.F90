@@ -219,6 +219,14 @@ module nudging
   private :: nudging_set_profile
   private :: calc_DryStaticEnergy
   public  :: nudging_final
+  public  :: get_nudging_target
+  private :: get_nudging_target_2D
+  private :: get_nudging_target_3D
+
+  interface get_nudging_target
+    module procedure get_nudging_target_2D
+    module procedure get_nudging_target_3D
+  end interface get_nudging_target
 
   ! Nudging Parameters
   !--------------------
@@ -290,6 +298,11 @@ module nudging
   real(r8),allocatable:: Target_S    (:,:,:)  !(pcols,pver,begchunk:endchunk)
   real(r8),allocatable:: Target_Q    (:,:,:)  !(pcols,pver,begchunk:endchunk)
   real(r8),allocatable:: Target_PS   (:,:)    !(pcols,begchunk:endchunk)
+  real(r8),allocatable:: Target_ALDIF   (:,:) !(pcols,begchunk:endchunk)
+  real(r8),allocatable:: Target_ALDIR   (:,:) !(pcols,begchunk:endchunk)
+  real(r8),allocatable:: Target_ASDIF   (:,:) !(pcols,begchunk:endchunk)
+  real(r8),allocatable:: Target_ASDIR   (:,:) !(pcols,begchunk:endchunk)
+  real(r8),allocatable:: Target_rad_lwup(:,:) !(pcols,begchunk:endchunk)
   real(r8),allocatable:: Model_U     (:,:,:)  !(pcols,pver,begchunk:endchunk)
   real(r8),allocatable:: Model_V     (:,:,:)  !(pcols,pver,begchunk:endchunk)
   real(r8),allocatable:: Model_T     (:,:,:)  !(pcols,pver,begchunk:endchunk)
@@ -318,6 +331,11 @@ module nudging
   real(r8),allocatable::Nobs_T (:,:,:,:) !(pcols,pverob,begchunk:endchunk,Nudge_NumObs)
   real(r8),allocatable::Nobs_Q (:,:,:,:) !(pcols,pverob,begchunk:endchunk,Nudge_NumObs)
   real(r8),allocatable::Nobs_PS(:,:,:)   !(pcols,begchunk:endchunk,Nudge_NumObs)
+  real(r8),allocatable::Nobs_ALDIF   (:,:,:) !(pcols,begchunk:endchunk,Nudge_NumObs)
+  real(r8),allocatable::Nobs_ALDIR   (:,:,:) !(pcols,begchunk:endchunk,Nudge_NumObs)
+  real(r8),allocatable::Nobs_ASDIF   (:,:,:) !(pcols,begchunk:endchunk,Nudge_NumObs)
+  real(r8),allocatable::Nobs_ASDIR   (:,:,:) !(pcols,begchunk:endchunk,Nudge_NumObs)
+  real(r8),allocatable::Nobs_rad_lwup(:,:,:) !(pcols,begchunk:endchunk,Nudge_NumObs)
 !  real(r8),allocatable::pmidob(:,:,:,:)     !(pcols,pverob,begchunk:endchunk,Nudge_NumObs)   obs mid-level pressures
   real(r8),allocatable::pintob(:,:,:,:)     !(pcols,pverob+1,begchunk:endchunk,Nudge_NumObs) obs interface pressures
   real(r8),allocatable::Nobs_U_remap(:,:,:,:) !(pcols,pver,begchunk:endchunk,Nudge_NumObs)
@@ -653,6 +671,16 @@ contains
    call alloc_err(istat,'nudging_init','Target_Q',pcols*pver*((endchunk-begchunk)+1))
    allocate(Target_PS(pcols,begchunk:endchunk),stat=istat)
    call alloc_err(istat,'nudging_init','Target_PS',pcols*((endchunk-begchunk)+1))
+   allocate(Target_ALDIF(pcols,begchunk:endchunk),stat=istat)
+   call alloc_err(istat,'nudging_init','Target_ALDIF',pcols*((endchunk-begchunk)+1))
+   allocate(Target_ALDIR(pcols,begchunk:endchunk),stat=istat)
+   call alloc_err(istat,'nudging_init','Target_ALDIR',pcols*((endchunk-begchunk)+1))
+   allocate(Target_ASDIF(pcols,begchunk:endchunk),stat=istat)
+   call alloc_err(istat,'nudging_init','Target_ASDIF',pcols*((endchunk-begchunk)+1))
+   allocate(Target_ASDIR(pcols,begchunk:endchunk),stat=istat)
+   call alloc_err(istat,'nudging_init','Target_ASDIR',pcols*((endchunk-begchunk)+1))
+   allocate(Target_rad_lwup(pcols,begchunk:endchunk),stat=istat)
+   call alloc_err(istat,'nudging_init','Target_rad_lwup',pcols*((endchunk-begchunk)+1))
 
    allocate(Model_U(pcols,pver,begchunk:endchunk),stat=istat)
    call alloc_err(istat,'nudging_init','Model_U',pcols*pver*((endchunk-begchunk)+1))
@@ -991,6 +1019,16 @@ contains
    call alloc_err(istat,'nudging_init','Nobs_Q',pcols*pver*((endchunk-begchunk)+1)*Nudge_NumObs)
    allocate(Nobs_PS(pcols,begchunk:endchunk,Nudge_NumObs),stat=istat)
    call alloc_err(istat,'nudging_init','Nobs_PS',pcols*((endchunk-begchunk)+1)*Nudge_NumObs)
+   allocate(Nobs_ALDIF(pcols,begchunk:endchunk,Nudge_NumObs),stat=istat)
+   call alloc_err(istat,'nudging_init','Nobs_ALDIF',pcols*((endchunk-begchunk)+1)*Nudge_NumObs)
+   allocate(Nobs_ALDIR(pcols,begchunk:endchunk,Nudge_NumObs),stat=istat)
+   call alloc_err(istat,'nudging_init','Nobs_ALDIR',pcols*((endchunk-begchunk)+1)*Nudge_NumObs)
+   allocate(Nobs_ASDIF(pcols,begchunk:endchunk,Nudge_NumObs),stat=istat)
+   call alloc_err(istat,'nudging_init','Nobs_ASDIF',pcols*((endchunk-begchunk)+1)*Nudge_NumObs)
+   allocate(Nobs_ASDIR(pcols,begchunk:endchunk,Nudge_NumObs),stat=istat)
+   call alloc_err(istat,'nudging_init','Nobs_ASDIR',pcols*((endchunk-begchunk)+1)*Nudge_NumObs)
+   allocate(Nobs_rad_lwup(pcols,begchunk:endchunk,Nudge_NumObs),stat=istat)
+   call alloc_err(istat,'nudging_init','Nobs_rad_lwup',pcols*((endchunk-begchunk)+1)*Nudge_NumObs)
    allocate(pintob(pcols,pverob+1,begchunk:endchunk,Nudge_NumObs),stat=istat)
    call alloc_err(istat,'nudging_init','pintob',pcols*(pverob+1)*((endchunk-begchunk)+1)*Nudge_NumObs)
 
@@ -1007,7 +1045,12 @@ contains
    Nobs_V(:pcols,:pverob,begchunk:endchunk,:Nudge_NumObs)=0._r8
    Nobs_T(:pcols,:pverob,begchunk:endchunk,:Nudge_NumObs)=0._r8
    Nobs_Q(:pcols,:pverob,begchunk:endchunk,:Nudge_NumObs)=0._r8
-   Nobs_PS(:pcols     ,begchunk:endchunk,:Nudge_NumObs)=0._r8
+   Nobs_PS(:pcols       ,begchunk:endchunk,:Nudge_NumObs)=0._r8
+   Nobs_ALDIF   (:pcols,begchunk:endchunk,:Nudge_NumObs)=0._r8
+   Nobs_ALDIR   (:pcols,begchunk:endchunk,:Nudge_NumObs)=0._r8
+   Nobs_ASDIF   (:pcols,begchunk:endchunk,:Nudge_NumObs)=0._r8
+   Nobs_ASDIR   (:pcols,begchunk:endchunk,:Nudge_NumObs)=0._r8
+   Nobs_rad_lwup(:pcols,begchunk:endchunk,:Nudge_NumObs)=0._r8
    pintob(:pcols,:pverob+1,begchunk:endchunk,:Nudge_NumObs)=0._r8
 
    Nobs_U_remap(:pcols,:pver,begchunk:endchunk,:Nudge_NumObs)=0._r8
@@ -1097,6 +1140,11 @@ contains
      Target_S(:pcols,:pver,lchnk)=0._r8
      Target_Q(:pcols,:pver,lchnk)=0._r8
      Target_PS(:pcols,lchnk)=0._r8
+     Target_ALDIF   (:pcols,lchnk)=0._r8
+     Target_ALDIR   (:pcols,lchnk)=0._r8
+     Target_ASDIF   (:pcols,lchnk)=0._r8
+     Target_ASDIR   (:pcols,lchnk)=0._r8
+     Target_rad_lwup(:pcols,lchnk)=0._r8
    end do
 
    ! End Routine
@@ -1149,6 +1197,7 @@ contains
    real(r8)                :: Sbar,Qbar,Wsum
    integer                 :: dtime
    integer                 :: iInd
+   real(r8)                :: lnpint_ob(pverob+1)
 
    ! Check if Nudging is initialized
    !---------------------------------
@@ -1322,17 +1371,26 @@ contains
                write(iulog,*) 'PINTOB:', pintob(icol,:pverob+1,lchnk,Nudge_ObsInd(iInd))
                write(iulog,*) 'PINT:', phys_state(lchnk)%pint(icol,:pver)
             endif
-            
-            call rebin(pverob, pver, log(pintob(icol,:,lchnk,Nudge_ObsInd(iInd))), phys_state(lchnk)%lnpint(icol,:), &
+!+++arh            
+            ! Clamp the obs edge grid to cover the model column: rebin treats any
+            ! part of a target bin outside the source grid as zero (diluting the
+            ! bin average), so when model PS > obs PS the lowest model level gets
+            ! unphysically small values. Extending the obs bottom (top) edge is a
+            ! constant extrapolation of the lowest (highest) obs layer.
+            lnpint_ob(:) = log(pintob(icol,:,lchnk,Nudge_ObsInd(iInd)))
+            lnpint_ob(pverob+1) = max(lnpint_ob(pverob+1), phys_state(lchnk)%lnpint(icol,pver+1))
+            lnpint_ob(1)        = min(lnpint_ob(1)       , phys_state(lchnk)%lnpint(icol,1))
+
+            call rebin(pverob, pver, lnpint_ob, phys_state(lchnk)%lnpint(icol,:), &
                  Nobs_U(icol,:,lchnk,Nudge_ObsInd(iInd)),              &
                  Nobs_U_remap(icol,:,lchnk,Nudge_ObsInd(iInd)))
-            call rebin(pverob, pver, log(pintob(icol,:,lchnk,Nudge_ObsInd(iInd))), phys_state(lchnk)%lnpint(icol,:), &
+            call rebin(pverob, pver, lnpint_ob, phys_state(lchnk)%lnpint(icol,:), &
                  Nobs_V(icol,:,lchnk,Nudge_ObsInd(iInd)),              &
                  Nobs_V_remap(icol,:,lchnk,Nudge_ObsInd(iInd)))
-            call rebin(pverob, pver, log(pintob(icol,:,lchnk,Nudge_ObsInd(iInd))), phys_state(lchnk)%lnpint(icol,:), &
+            call rebin(pverob, pver, lnpint_ob, phys_state(lchnk)%lnpint(icol,:), &
                  Nobs_T(icol,:,lchnk,Nudge_ObsInd(iInd)),              &
                  Nobs_T_remap(icol,:,lchnk,Nudge_ObsInd(iInd)))
-            call rebin(pverob, pver, log(pintob(icol,:,lchnk,Nudge_ObsInd(iInd))), phys_state(lchnk)%lnpint(icol,:), &
+            call rebin(pverob, pver, lnpint_ob, phys_state(lchnk)%lnpint(icol,:), &
                  Nobs_Q(icol,:,lchnk,Nudge_ObsInd(iInd)),              &
                  Nobs_Q_remap(icol,:,lchnk,Nudge_ObsInd(iInd)))
          end do
@@ -1393,6 +1451,11 @@ contains
          Target_T(:ncol,:pver,lchnk)=Nobs_T_remap(:ncol,:pver,lchnk,Nudge_ObsInd(1))
          Target_Q(:ncol,:pver,lchnk)=Nobs_Q_remap(:ncol,:pver,lchnk,Nudge_ObsInd(1))
          Target_PS(:ncol     ,lchnk)=Nobs_PS(:ncol     ,lchnk,Nudge_ObsInd(1))
+         Target_ALDIF   (:ncol,lchnk)=Nobs_ALDIF   (:ncol,lchnk,Nudge_ObsInd(1))
+         Target_ALDIR   (:ncol,lchnk)=Nobs_ALDIR   (:ncol,lchnk,Nudge_ObsInd(1))
+         Target_ASDIF   (:ncol,lchnk)=Nobs_ASDIF   (:ncol,lchnk,Nudge_ObsInd(1))
+         Target_ASDIR   (:ncol,lchnk)=Nobs_ASDIR   (:ncol,lchnk,Nudge_ObsInd(1))
+         Target_rad_lwup(:ncol,lchnk)=Nobs_rad_lwup(:ncol,lchnk,Nudge_ObsInd(1))
        end do
      elseif(Nudge_Force_Opt == 1) then
        ! Target is linear interpolation of OBS data CURR<-->NEXT time
@@ -1413,8 +1476,18 @@ contains
                                            +Tfrac *Nobs_T_remap(:ncol,:pver,lchnk,Nudge_ObsInd(2))
          Target_Q(:ncol,:pver,lchnk)=(1._r8-Tfrac)*Nobs_Q_remap(:ncol,:pver,lchnk,Nudge_ObsInd(1)) &
                                            +Tfrac *Nobs_Q_remap(:ncol,:pver,lchnk,Nudge_ObsInd(2))
-         Target_PS(:ncol     ,lchnk)=(1._r8-Tfrac)*Nobs_PS(:ncol     ,lchnk,Nudge_ObsInd(1)) &
-                                           +Tfrac *Nobs_PS(:ncol     ,lchnk,Nudge_ObsInd(2))
+         Target_PS(:ncol     ,lchnk)=(1._r8-Tfrac)*Nobs_PS(:ncol,lchnk,Nudge_ObsInd(1)) &
+                                           +Tfrac *Nobs_PS(:ncol,lchnk,Nudge_ObsInd(2))
+         Target_ALDIF   (:ncol,lchnk)=(1._r8-Tfrac)*Nobs_ALDIF   (:ncol,lchnk,Nudge_ObsInd(1)) &
+                                            +Tfrac *Nobs_ALDIF   (:ncol,lchnk,Nudge_ObsInd(2))
+         Target_ALDIR   (:ncol,lchnk)=(1._r8-Tfrac)*Nobs_ALDIR   (:ncol,lchnk,Nudge_ObsInd(1)) &
+                                            +Tfrac *Nobs_ALDIR   (:ncol,lchnk,Nudge_ObsInd(2))
+         Target_ASDIF   (:ncol,lchnk)=(1._r8-Tfrac)*Nobs_ASDIF   (:ncol,lchnk,Nudge_ObsInd(1)) &
+                                            +Tfrac *Nobs_ASDIF   (:ncol,lchnk,Nudge_ObsInd(2))
+         Target_ASDIR   (:ncol,lchnk)=(1._r8-Tfrac)*Nobs_ASDIR   (:ncol,lchnk,Nudge_ObsInd(1)) &
+                                            +Tfrac *Nobs_ASDIR   (:ncol,lchnk,Nudge_ObsInd(2))
+         Target_rad_lwup(:ncol,lchnk)=(1._r8-Tfrac)*Nobs_rad_lwup(:ncol,lchnk,Nudge_ObsInd(1)) &
+                                            +Tfrac *Nobs_rad_lwup(:ncol,lchnk,Nudge_ObsInd(2))
        end do
 
        ! Total replacement of T, U, V, Q at lower levels (ktr+1:pver).
@@ -1763,6 +1836,56 @@ contains
      call endrun('Variable "PS" is missing in '//trim(anal_file))
    endif
 
+   call infld('ALDIF',fileID,dim1name,dim2name,       &
+              1,pcols,begchunk,endchunk,Tmp2D,        &
+              VARflag,gridname='physgrid',timelevel=1 )
+   if(VARflag) then
+     Nobs_ALDIF(:,begchunk:endchunk,Nudge_ObsInd(1)) = Tmp2D(:,begchunk:endchunk)
+   else
+     write(iulog,*) 'Variable "ALDIF" is missing in '//trim(anal_file)
+!PFC?     call endrun('Variable "ALDIF" is missing in '//trim(anal_file))
+   endif
+
+   call infld('ALDIR',fileID,dim1name,dim2name,       &
+              1,pcols,begchunk,endchunk,Tmp2D,        &
+              VARflag,gridname='physgrid',timelevel=1 )
+   if(VARflag) then
+     Nobs_ALDIR(:,begchunk:endchunk,Nudge_ObsInd(1)) = Tmp2D(:,begchunk:endchunk)
+   else
+     write(iulog,*) 'Variable "ALDIR" is missing in '//trim(anal_file)
+!PFC?     call endrun('Variable "ALDIR" is missing in '//trim(anal_file))
+   endif
+
+   call infld('ASDIF',fileID,dim1name,dim2name,       &
+              1,pcols,begchunk,endchunk,Tmp2D,        &
+              VARflag,gridname='physgrid',timelevel=1 )
+   if(VARflag) then
+     Nobs_ASDIF(:,begchunk:endchunk,Nudge_ObsInd(1)) = Tmp2D(:,begchunk:endchunk)
+   else
+     write(iulog,*) 'Variable "ASDIF" is missing in '//trim(anal_file)
+!PFC?     call endrun('Variable "ASDIF" is missing in '//trim(anal_file))
+   endif
+
+   call infld('ASDIR',fileID,dim1name,dim2name,       &
+              1,pcols,begchunk,endchunk,Tmp2D,        &
+              VARflag,gridname='physgrid',timelevel=1 )
+   if(VARflag) then
+     Nobs_ASDIR(:,begchunk:endchunk,Nudge_ObsInd(1)) = Tmp2D(:,begchunk:endchunk)
+   else
+     write(iulog,*) 'Variable "ASDIR" is missing in '//trim(anal_file)
+!PFC?     call endrun('Variable "ASDIR" is missing in '//trim(anal_file))
+   endif
+
+   call infld('rad_lwup',fileID,dim1name,dim2name,    &
+              1,pcols,begchunk,endchunk,Tmp2D,        &
+              VARflag,gridname='physgrid',timelevel=1 )
+   if(VARflag) then
+     Nobs_rad_lwup(:,begchunk:endchunk,Nudge_ObsInd(1)) = Tmp2D(:,begchunk:endchunk)
+   else
+     write(iulog,*) 'Variable "rad_lwup" is missing in '//trim(anal_file)
+!PFC?     call endrun('Variable "rad_lwup" is missing in '//trim(anal_file))
+   endif
+
 !   do lchnk=begchunk,endchunk
 !      do kk=1,pverob+1
 !         pintob(:,kk,lchnk,Nudge_ObsInd(1))=hyaiob(kk)*ps0+(hybiob(kk)*Nobs_PS(:,lchnk,Nudge_ObsInd(1)))
@@ -1897,6 +2020,11 @@ contains
     if (allocated(Target_S)) deallocate(Target_S)
     if (allocated(Target_Q)) deallocate(Target_Q)
     if (allocated(Target_PS)) deallocate(Target_PS)
+    if (allocated(Target_ALDIF))    deallocate(Target_ALDIF)
+    if (allocated(Target_ALDIR))    deallocate(Target_ALDIR)
+    if (allocated(Target_ASDIF))    deallocate(Target_ASDIF)
+    if (allocated(Target_ASDIR))    deallocate(Target_ASDIR)
+    if (allocated(Target_rad_lwup)) deallocate(Target_rad_lwup)
     if (allocated(Model_U)) deallocate(Model_U)
     if (allocated(Model_V)) deallocate(Model_V)
     if (allocated(Model_T)) deallocate(Model_T)
@@ -1921,6 +2049,11 @@ contains
     if (allocated(Nobs_T)) deallocate(Nobs_T)
     if (allocated(Nobs_Q)) deallocate(Nobs_Q)
     if (allocated(Nobs_PS)) deallocate(Nobs_PS)
+    if (allocated(Nobs_ALDIF))    deallocate(Nobs_ALDIF)
+    if (allocated(Nobs_ALDIR))    deallocate(Nobs_ALDIR)
+    if (allocated(Nobs_ASDIF))    deallocate(Nobs_ASDIF)
+    if (allocated(Nobs_ASDIR))    deallocate(Nobs_ASDIR)
+    if (allocated(Nobs_rad_lwup)) deallocate(Nobs_rad_lwup)
     if (allocated(pintob)) deallocate(pintob)
     if (allocated(Nobs_U_remap)) deallocate(Nobs_U_remap)
     if (allocated(Nobs_V_remap)) deallocate(Nobs_V_remap)
@@ -2064,6 +2197,116 @@ contains
    !-----------
 
   end subroutine calc_DryStaticEnergy
+  !================================================================
+
+
+  !================================================================
+  subroutine get_nudging_target_2D(VARNAME,Target_Data)
+    !
+    ! get_nudging_target_2D: Return Nudging 2D Target values for the given variable. 
+    !===========================================================================
+    use ppgrid   ,only: pver,pcols,begchunk,endchunk
+    use phys_grid,only: get_ncols_p
+
+    ! Arguments
+    !--------------
+    character(len=*),intent(in) :: VARNAME
+    real(r8)        ,intent(out):: Target_Data(:,:)   ! (pcols,begchunk:endchunk)
+
+    ! Local values
+    !----------------
+    integer:: ncol
+    integer:: lchnk
+
+    ! Select the VARNAME values
+    !---------------------------
+    if(trim(VARNAME).eq.'PS') then
+      do lchnk=begchunk,endchunk
+        ncol=get_ncols_p(lchnk)
+        Target_Data(:ncol,lchnk)= Target_PS(:ncol,lchnk)
+      end do
+    elseif(trim(VARNAME).eq.'ALDIF') then
+      do lchnk=begchunk,endchunk
+        ncol=get_ncols_p(lchnk)
+        Target_Data(:ncol,lchnk)= Target_ALDIF(:ncol,lchnk)
+      end do
+    elseif(trim(VARNAME).eq.'ALDIR') then
+      do lchnk=begchunk,endchunk
+        ncol=get_ncols_p(lchnk)
+        Target_Data(:ncol,lchnk)= Target_ALDIR(:ncol,lchnk)
+      end do
+    elseif(trim(VARNAME).eq.'ASDIF') then
+      do lchnk=begchunk,endchunk
+        ncol=get_ncols_p(lchnk)
+        Target_Data(:ncol,lchnk)= Target_ASDIF(:ncol,lchnk)
+      end do
+    elseif(trim(VARNAME).eq.'ASDIR') then
+      do lchnk=begchunk,endchunk
+        ncol=get_ncols_p(lchnk)
+        Target_Data(:ncol,lchnk)= Target_ASDIR(:ncol,lchnk)
+      end do
+    elseif(trim(VARNAME).eq.'rad_lwup') then
+      do lchnk=begchunk,endchunk
+        ncol=get_ncols_p(lchnk)
+        Target_Data(:ncol,lchnk)= Target_rad_lwup(:ncol,lchnk)
+      end do
+    else
+     call endrun('get_nudging_target_2D:: ERROR unknown variable: '//trim(VARNAME))
+    endif
+
+    ! End Routine
+    !------------
+  end subroutine get_nudging_target_2D
+  !================================================================
+
+
+  !================================================================
+  subroutine get_nudging_target_3D(VARNAME,Target_Data)
+    !
+    ! get_nudging_target_3D: Return Nudging 3D Target values for the given variable. 
+    !===========================================================================
+    use ppgrid   ,only: pver,pcols,begchunk,endchunk
+    use phys_grid,only: get_ncols_p
+ 
+    ! Arguments
+    !--------------
+    character(len=*),intent(in) :: VARNAME
+    real(r8)        ,intent(out):: Target_Data(:,:,:)   ! (pcols,pver,begchunk:endchunk)
+
+    ! Local values
+    !----------------
+    integer:: ncol
+    integer:: lchnk
+
+    ! Select the VARNAME values
+    !---------------------------
+    if(trim(VARNAME).eq.'T') then
+      do lchnk=begchunk,endchunk
+        ncol=get_ncols_p(lchnk)
+        Target_Data(:ncol,:pver,lchnk)= Target_T(:ncol,:pver,lchnk)
+      end do
+    elseif(trim(VARNAME).eq.'U') then
+      do lchnk=begchunk,endchunk
+        ncol=get_ncols_p(lchnk)
+        Target_Data(:ncol,:pver,lchnk)= Target_U(:ncol,:pver,lchnk)
+      end do
+    elseif(trim(VARNAME).eq.'V') then
+      do lchnk=begchunk,endchunk
+        ncol=get_ncols_p(lchnk)
+        Target_Data(:ncol,:pver,lchnk)= Target_V(:ncol,:pver,lchnk)
+      end do
+    elseif(trim(VARNAME).eq.'Q') then
+      do lchnk=begchunk,endchunk
+        ncol=get_ncols_p(lchnk)
+        Target_Data(:ncol,:pver,lchnk)= Target_Q(:ncol,:pver,lchnk)
+      end do
+    else
+     call endrun('get_nudging_target_3D:: ERROR unknown variable: '//trim(VARNAME))
+    endif
+
+    ! End Routine
+    !------------
+  end subroutine get_nudging_target_3D
   !================================================================
 
 end module nudging
