@@ -1381,6 +1381,28 @@ contains
        cam_in(c)%aldif(:ncol) = nudge_work(:ncol,c)
     end do
 
+!+++arh -- zero out turbulent fluxes for now.
+!          remove this code once we remove clubb.    
+    do c=begchunk, endchunk
+       ncol = get_ncols_p(c)
+       cam_in(c)%shf(:ncol) = 0._r8
+    end do
+
+    do c=begchunk, endchunk
+       ncol = get_ncols_p(c)
+       cam_in(c)%cflx(:ncol,1) = 0._r8
+    end do
+
+    do c=begchunk, endchunk
+       ncol = get_ncols_p(c)
+       cam_in(c)%wsx(:ncol) = 0._r8
+    end do
+
+    do c=begchunk, endchunk
+       ncol = get_ncols_p(c)
+       cam_in(c)%wsy(:ncol) = 0._r8
+    end do
+
   end subroutine phys_set_srf_radvars
   !=======================================================================
 
@@ -1848,14 +1870,6 @@ contains
              if (trim(cam_take_snapshot_before) == "clubb_tend_cam") then
                 call cam_snapshot_all_outfld_tphysac(cam_snapshot_before_num, state, tend, cam_in, cam_out, pbuf, &
                      fh2o, surfric, obklen, flx_heat, cmfmc, dlf, det_s, det_ice, net_flx)
-             end if
-
-!+++arh -- zero out surface fluxes
-             if (standalone_atm) then
-               cam_in%shf(:ncol) = 0._r8
-               cam_in%cflx(:ncol,1) = 0._r8
-               cam_in%wsx(:ncol) = 0._r8
-               cam_in%wsy(:ncol) = 0._r8
              end if
 
              call clubb_tend_cam(state, ptend, pbuf, cld_macmic_ztodt,&
