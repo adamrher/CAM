@@ -194,7 +194,7 @@ module nudging
 !=====================================================================
   ! Useful modules
   !------------------
-  use shr_kind_mod,   only: r8=>SHR_KIND_R8, cs=>SHR_KIND_CS, cl=>SHR_KIND_CL
+  use shr_kind_mod,   only: r8=>SHR_KIND_R8, r4=>SHR_KIND_R4, cs=>SHR_KIND_CS, cl=>SHR_KIND_CL
   use time_manager,   only: timemgr_time_ge, timemgr_time_inc, get_curr_date
   use time_manager,   only: get_step_size
   use cam_abortutils, only: endrun
@@ -329,7 +329,8 @@ module nudging
   real(r8),allocatable::Nobs_U (:,:,:,:) !(pcols,pverob,begchunk:endchunk,Nudge_NumObs)
   real(r8),allocatable::Nobs_V (:,:,:,:) !(pcols,pverob,begchunk:endchunk,Nudge_NumObs)
   real(r8),allocatable::Nobs_T (:,:,:,:) !(pcols,pverob,begchunk:endchunk,Nudge_NumObs)
-  real(r8),allocatable::Nobs_Q (:,:,:,:) !(pcols,pverob,begchunk:endchunk,Nudge_NumObs)
+!+++arh -- Nobs_Q now holds the DRY mixing ratio (QDRY) read from the obs file
+  real(r8),allocatable::Nobs_Q (:,:,:,:) !(pcols,pverob,begchunk:endchunk,Nudge_NumObs) DRY mixing ratio (QDRY from obs file)
   real(r8),allocatable::Nobs_PS(:,:,:)   !(pcols,begchunk:endchunk,Nudge_NumObs)
   real(r8),allocatable::Nobs_ALDIF   (:,:,:) !(pcols,begchunk:endchunk,Nudge_NumObs)
   real(r8),allocatable::Nobs_ALDIR   (:,:,:) !(pcols,begchunk:endchunk,Nudge_NumObs)
@@ -338,6 +339,11 @@ module nudging
   real(r8),allocatable::Nobs_rad_lwup(:,:,:) !(pcols,begchunk:endchunk,Nudge_NumObs)
 !  real(r8),allocatable::pmidob(:,:,:,:)     !(pcols,pverob,begchunk:endchunk,Nudge_NumObs)   obs mid-level pressures
   real(r8),allocatable::pintob(:,:,:,:)     !(pcols,pverob+1,begchunk:endchunk,Nudge_NumObs) obs interface pressures
+!+++arh -- new module arrays for the dry-eta remap: obs PSDRY, and obs hybrid
+!          interface coefficients promoted from nudging_update_analyses locals
+  real(r8),allocatable::Nobs_PSDRY(:,:,:)   !(pcols,begchunk:endchunk,Nudge_NumObs) obs dry surface pressure
+  real(r8),allocatable::hyaiob(:)           !(pverob+1) obs interface hybrid A coefficients
+  real(r8),allocatable::hybiob(:)           !(pverob+1) obs interface hybrid B coefficients
   real(r8),allocatable::Nobs_U_remap(:,:,:,:) !(pcols,pver,begchunk:endchunk,Nudge_NumObs)
   real(r8),allocatable::Nobs_V_remap(:,:,:,:) !(pcols,pver,begchunk:endchunk,Nudge_NumObs)
   real(r8),allocatable::Nobs_T_remap(:,:,:,:) !(pcols,pver,begchunk:endchunk,Nudge_NumObs)
@@ -1031,6 +1037,13 @@ contains
    call alloc_err(istat,'nudging_init','Nobs_rad_lwup',pcols*((endchunk-begchunk)+1)*Nudge_NumObs)
    allocate(pintob(pcols,pverob+1,begchunk:endchunk,Nudge_NumObs),stat=istat)
    call alloc_err(istat,'nudging_init','pintob',pcols*(pverob+1)*((endchunk-begchunk)+1)*Nudge_NumObs)
+!+++arh -- allocate the new dry-eta remap arrays
+   allocate(Nobs_PSDRY(pcols,begchunk:endchunk,Nudge_NumObs),stat=istat)
+   call alloc_err(istat,'nudging_init','Nobs_PSDRY',pcols*((endchunk-begchunk)+1)*Nudge_NumObs)
+   allocate(hyaiob(pverob+1),stat=istat)
+   call alloc_err(istat,'nudging_init','hyaiob',pverob+1)
+   allocate(hybiob(pverob+1),stat=istat)
+   call alloc_err(istat,'nudging_init','hybiob',pverob+1)
 
    allocate(Nobs_U_remap(pcols,pver,begchunk:endchunk,Nudge_NumObs),stat=istat)
    call alloc_err(istat,'nudging_init','Nobs_U_remap',pcols*pver*((endchunk-begchunk)+1)*Nudge_NumObs)
@@ -1052,6 +1065,10 @@ contains
    Nobs_ASDIR   (:pcols,begchunk:endchunk,:Nudge_NumObs)=0._r8
    Nobs_rad_lwup(:pcols,begchunk:endchunk,:Nudge_NumObs)=0._r8
    pintob(:pcols,:pverob+1,begchunk:endchunk,:Nudge_NumObs)=0._r8
+!+++arh -- initialize the new dry-eta remap arrays
+   Nobs_PSDRY(:pcols,begchunk:endchunk,:Nudge_NumObs)=0._r8
+   hyaiob(:pverob+1)=0._r8
+   hybiob(:pverob+1)=0._r8
 
    Nobs_U_remap(:pcols,:pver,begchunk:endchunk,:Nudge_NumObs)=0._r8
    Nobs_V_remap(:pcols,:pver,begchunk:endchunk,:Nudge_NumObs)=0._r8
@@ -1171,6 +1188,10 @@ contains
    use filenames    ,only: interpret_filename_spec
    use ESMF
    use mo_util      ,only: rebin
+!+++arh -- ps0 needed to build the obs dry-eta coordinate from hyaiob/hybiob;
+!          mpi_max needed for the global QDRY conservation error diagnostic
+   use hycoef       ,only: ps0
+   use spmd_utils   ,only: mpi_max
 
    ! Arguments
    !-----------
@@ -1197,7 +1218,12 @@ contains
    real(r8)                :: Sbar,Qbar,Wsum
    integer                 :: dtime
    integer                 :: iInd
-   real(r8)                :: lnpint_ob(pverob+1)
+!+++arh -- dry-eta interface coordinates for the vertical remap (obs and model)
+   real(r8)                :: etaiob(pverob+1)
+   real(r8)                :: etai(pver+1)
+!+++arh -- QDRY conservation check (cf. check_tracers_chng in check_energy.F90)
+   real(r8)                :: Qint_ob,Qint_md,Qerr,Qerr_max,Qerr_gmax
+   integer                 :: ierr
 
    ! Check if Nudging is initialized
    !---------------------------------
@@ -1359,43 +1385,114 @@ contains
      call nudging_update_analyses (trim(Nudge_Path)//trim(Nudge_File))
    endif ! ((Before_End) .and. (Update_Nudge)) then
 
+!+++arh -- initialize the max QDRY remap conservation error for this step
+   Qerr_max = 0._r8
+
+!+++arh -- remap rewritten to use the dry-mass hybrid coordinate instead of
+!          absolute log-pressure, so obs/model surface pressure differences
+!          can no longer push model levels outside the obs column
      ! Vertically remap Nobs_U/V/T/Q from pverob to pver using conservative rebin
-     ! on log-pressure coordinates, with model interface pressures from phys_state.
+     ! in the dry-mass hybrid coordinate eta = pdry/psdry. Both columns span
+     ! (ptop/psdry, 1], so obs/model surface pressure differences cannot push
+     ! model levels below the obs column bottom. Nobs_Q holds the DRY mixing
+     ! ratio (QDRY from the obs file); rebinning it in dry eta conserves water
+     ! mass per unit dry air mass, and the remapped values are converted to
+     ! wet on the model column afterward.
    do lchnk=begchunk,endchunk
       ncol=get_ncols_p(lchnk)
       do iInd=1,Nudge_NumObs
          do icol=1,ncol
-            if (pintob(icol,1,lchnk,Nudge_ObsInd(iInd)) .le. 0._r8) cycle
-            
-            if (lchnk.eq.1 .and. icol.eq.1 .and. iInd.eq.1) then
-               write(iulog,*) 'PINTOB:', pintob(icol,:pverob+1,lchnk,Nudge_ObsInd(iInd))
-               write(iulog,*) 'PINT:', phys_state(lchnk)%pint(icol,:pver)
-            endif
-!+++arh            
-            ! Clamp the obs edge grid to cover the model column: rebin treats any
-            ! part of a target bin outside the source grid as zero (diluting the
-            ! bin average), so when model PS > obs PS the lowest model level gets
-            ! unphysically small values. Extending the obs bottom (top) edge is a
-            ! constant extrapolation of the lowest (highest) obs layer.
-            lnpint_ob(:) = log(pintob(icol,:,lchnk,Nudge_ObsInd(iInd)))
-            lnpint_ob(pverob+1) = max(lnpint_ob(pverob+1), phys_state(lchnk)%lnpint(icol,pver+1))
-            lnpint_ob(1)        = min(lnpint_ob(1)       , phys_state(lchnk)%lnpint(icol,1))
+            if (Nobs_PSDRY(icol,lchnk,Nudge_ObsInd(iInd)) .le. 0._r8) cycle
 
-            call rebin(pverob, pver, lnpint_ob, phys_state(lchnk)%lnpint(icol,:), &
+            ! Model and obs dry-eta interface coordinates
+            do kk=1,pver+1
+               etai(kk) = phys_state(lchnk)%pintdry(icol,kk)/phys_state(lchnk)%psdry(icol)
+            end do
+            do kk=1,pverob+1
+               etaiob(kk) = (hyaiob(kk)*ps0)/Nobs_PSDRY(icol,lchnk,Nudge_ObsInd(iInd)) + hybiob(kk)
+            end do
+
+            ! The obs top edge (ptop/psdry_obs) floats relative to the model top
+            ! edge when the dry surface pressures differ, and rebin dilutes any
+            ! target bin not fully covered by the source grid; clamp so the obs
+            ! column always covers the model column. Both bottom edges are 1 by
+            ! construction, so the bottom clamp only guards against r4 roundoff
+            ! in the file coefficients.
+            etaiob(1)        = min(etaiob(1)       , etai(1))
+!+++arh -- both bottom edges must be 1 by construction; if either deviates by
+!          more than r4 roundoff the bottom clamp would be hiding a real
+!          coordinate inconsistency, so error out instead.
+            if ((abs(etai(pver+1)    -1._r8) > epsilon(1._r4)) .or. &
+                (abs(etaiob(pverob+1)-1._r8) > epsilon(1._r4))) then
+               write(iulog,*) 'NUDGING: bottom dry-eta edge differs from 1 beyond r4 roundoff:', &
+                              ' chunk',lchnk,' col',icol,' obsind',Nudge_ObsInd(iInd)
+               write(iulog,*) '  etai(pver+1)     =',etai(pver+1)
+               write(iulog,*) '  etaiob(pverob+1) =',etaiob(pverob+1)
+               call endrun('nudging_timestep_init: bottom dry-eta edge is not 1 to r4 roundoff')
+            endif
+            etaiob(pverob+1) = max(etaiob(pverob+1), etai(pver+1))
+
+!+++arh
+            !if (lchnk.eq.1 .and. icol.eq.1 .and. iInd.eq.1) then
+            !   write(iulog,*) 'ETAIOB:', etaiob(:pverob+1)
+            !   write(iulog,*) 'ETAI:', etai(:pver+1)
+            !endif
+
+            call rebin(pverob, pver, etaiob, etai,                     &
                  Nobs_U(icol,:,lchnk,Nudge_ObsInd(iInd)),              &
                  Nobs_U_remap(icol,:,lchnk,Nudge_ObsInd(iInd)))
-            call rebin(pverob, pver, lnpint_ob, phys_state(lchnk)%lnpint(icol,:), &
+            call rebin(pverob, pver, etaiob, etai,                     &
                  Nobs_V(icol,:,lchnk,Nudge_ObsInd(iInd)),              &
                  Nobs_V_remap(icol,:,lchnk,Nudge_ObsInd(iInd)))
-            call rebin(pverob, pver, lnpint_ob, phys_state(lchnk)%lnpint(icol,:), &
+            call rebin(pverob, pver, etaiob, etai,                     &
                  Nobs_T(icol,:,lchnk,Nudge_ObsInd(iInd)),              &
                  Nobs_T_remap(icol,:,lchnk,Nudge_ObsInd(iInd)))
-            call rebin(pverob, pver, lnpint_ob, phys_state(lchnk)%lnpint(icol,:), &
+            call rebin(pverob, pver, etaiob, etai,                     &
                  Nobs_Q(icol,:,lchnk,Nudge_ObsInd(iInd)),              &
                  Nobs_Q_remap(icol,:,lchnk,Nudge_ObsInd(iInd)))
+
+!+++arh -- QDRY mass conservation check (cf. check_tracers_chng): compare the
+!          dry-eta column integrals of QDRY before (obs grid) and after (model
+!          grid) the rebin. Multiplying either integral by psdry/gravit would
+!          give column water mass in kg/m2 on its own grid; the eta-integral
+!          form is what rebin conserves, and the relative error should be at
+!          roundoff unless the top clamp displaced the obs edges (which only
+!          happens when psdry_obs /= psdry_model at the model top).
+            Qint_ob = 0._r8
+            do kk=1,pverob
+               Qint_ob = Qint_ob + Nobs_Q(icol,kk,lchnk,Nudge_ObsInd(iInd)) &
+                                  *(etaiob(kk+1)-etaiob(kk))
+            end do
+            Qint_md = 0._r8
+            do kk=1,pver
+               Qint_md = Qint_md + Nobs_Q_remap(icol,kk,lchnk,Nudge_ObsInd(iInd)) &
+                                  *(etai(kk+1)-etai(kk))
+            end do
+            Qerr = (Qint_md-Qint_ob)/max(abs(Qint_ob),1.e-300_r8)
+            Qerr_max = max(Qerr_max,abs(Qerr))
+            if (abs(Qerr) > 1.e-12_r8) then
+               write(iulog,*) 'NUDGING: QDRY remap conservation error: chunk',lchnk, &
+                              ' col',icol,' obsind',Nudge_ObsInd(iInd)
+               write(iulog,*) '  obs   eta integral =',Qint_ob
+               write(iulog,*) '  remap eta integral =',Qint_md
+               write(iulog,*) '  relative error     =',Qerr
+            endif
+
+            ! Convert remapped QDRY to a wet mixing ratio on the model column
+            Nobs_Q_remap(icol,:pver,lchnk,Nudge_ObsInd(iInd)) =        &
+                 Nobs_Q_remap(icol,:pver,lchnk,Nudge_ObsInd(iInd))     &
+                 *(phys_state(lchnk)%pdeldry(icol,:pver)               &
+                  /phys_state(lchnk)%pdel(icol,:pver))
          end do
       end do
    end do
+
+!+++arh -- report the worst QDRY remap conservation error over all columns
+   call mpi_allreduce(Qerr_max, Qerr_gmax, 1, mpi_real8, mpi_max, mpicom, ierr)
+   if (ierr /= mpi_success) call endrun('nudging_timestep_init: mpi_allreduce Qerr_max FAILED')
+   if(masterproc) then
+     write(iulog,*) 'NUDGING: QDRY remap max relative conservation error=',Qerr_gmax
+   endif
       
    !----------------------------------------------------------------
    ! Toggle Nudging flag when the time interval is between
@@ -1698,9 +1795,6 @@ contains
    real(r8),allocatable:: Tmp3Dp(:,:,:)
    real(r8),allocatable:: Tmp2D(:,:)
 
-   real(r8),allocatable:: hyaiob(:)
-   real(r8),allocatable:: hybiob(:)
-
    character(len=*), parameter :: prefix = 'nudging_update_analyses: '
 
    ! Rotate Nudge_ObsInd() indices, then check the existence of the analyses
@@ -1740,9 +1834,9 @@ contains
    allocate(Tmp3Dp(pcols,pverob+1,begchunk:endchunk))
    allocate(Tmp2D(pcols,begchunk:endchunk))
 
-   allocate(hyaiob     (pverob+1))
-   allocate(hybiob     (pverob+1))
-
+!+++arh -- hyaiob/hybiob are now module arrays (allocated in nudging_init) so
+!          the remap loop in nudging_timestep_init can use them; the local
+!          declarations and allocations were removed from this routine
    ! Read hyaiob and hybiob (interface hybrid coefficients on obs grid, ilev dimension)
    !-------------------------------------------------------------------
    ierr = pio_inq_varid(fileID, 'hyai', varid)
@@ -1797,7 +1891,10 @@ contains
      call endrun('Variable "T" is missing in '//trim(anal_file))
    endif
 
-   call infld('Q',fileID,dim1name,'lev',dim2name,     &
+!+++arh -- read QDRY instead of Q
+   ! QDRY (dry mixing ratio) is required: it is remapped conservatively in
+   ! the dry-eta coordinate and converted to wet on the model column.
+   call infld('QDRY',fileID,dim1name,'lev',dim2name,  &
               1,pcols,1,pverob,begchunk,endchunk,Tmp3D, &
               VARflag,gridname='physgrid',timelevel=1 )
    if(VARflag) then
@@ -1807,7 +1904,7 @@ contains
 !     endif
      Nobs_Q(:,:,begchunk:endchunk,Nudge_ObsInd(1)) = Tmp3D(:,:,begchunk:endchunk)
    else
-     call endrun('Variable "Q" is missing in '//trim(anal_file))
+     call endrun('Variable "QDRY" is missing in '//trim(anal_file))
    endif
 
    call infld('PINT',fileID,dim1name,'ilev',dim2name,     &
@@ -1834,6 +1931,22 @@ contains
      Nobs_PS(:,begchunk:endchunk,Nudge_ObsInd(1)) = Tmp2D(:,begchunk:endchunk)
    else
      call endrun('Variable "PS" is missing in '//trim(anal_file))
+   endif
+
+!+++arh -- new read of PSDRY
+   ! PSDRY is required: it defines the obs dry-eta coordinate for the
+   ! vertical remap.
+   call infld('PSDRY',fileID,dim1name,dim2name,       &
+              1,pcols,begchunk,endchunk,Tmp2D,        &
+              VARflag,gridname='physgrid',timelevel=1 )
+   if(VARflag) then
+     if(Nudge_ZonalFilter) then
+       call ZM%calc_amps(Tmp2D,Zonal_Bamp2d)
+       call ZM%eval_grid(Zonal_Bamp2d,Tmp2D)
+     endif
+     Nobs_PSDRY(:,begchunk:endchunk,Nudge_ObsInd(1)) = Tmp2D(:,begchunk:endchunk)
+   else
+     call endrun('Variable "PSDRY" is missing in '//trim(anal_file))
    endif
 
    call infld('ALDIF',fileID,dim1name,dim2name,       &
@@ -2055,6 +2168,10 @@ contains
     if (allocated(Nobs_ASDIR))    deallocate(Nobs_ASDIR)
     if (allocated(Nobs_rad_lwup)) deallocate(Nobs_rad_lwup)
     if (allocated(pintob)) deallocate(pintob)
+!+++arh -- deallocate the new dry-eta remap arrays
+    if (allocated(Nobs_PSDRY)) deallocate(Nobs_PSDRY)
+    if (allocated(hyaiob)) deallocate(hyaiob)
+    if (allocated(hybiob)) deallocate(hybiob)
     if (allocated(Nobs_U_remap)) deallocate(Nobs_U_remap)
     if (allocated(Nobs_V_remap)) deallocate(Nobs_V_remap)
     if (allocated(Nobs_T_remap)) deallocate(Nobs_T_remap)

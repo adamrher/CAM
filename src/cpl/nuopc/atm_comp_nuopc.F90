@@ -56,7 +56,7 @@ module atm_comp_nuopc
    use dyn_grid            , only : get_horiz_grid_dim_d
    use phys_grid           , only : get_ncols_p, get_gcol_p, get_rlon_all_p, get_rlat_all_p
    use phys_grid           , only : ngcols=>num_global_phys_cols
-   use cam_control_mod     , only : cam_ctrl_set_orbit
+   use cam_control_mod     , only : cam_ctrl_set_orbit, cam_ctrl_set_standalone_atm !+++arh
    use cam_pio_utils       , only : cam_pio_createfile, cam_pio_openfile, cam_pio_closefile, pio_subsystem
    use cam_initfiles       , only : cam_initfiles_get_caseid, cam_initfiles_get_restdir
    use cam_history_support , only : fillvalue
@@ -309,6 +309,8 @@ contains
     if (ChkErr(rc,__LINE__,u_FILE_u)) return
     if (isPresent .and. isSet) then
        read (cvalue,*) mediator_present
+!+++arh
+       call cam_ctrl_set_standalone_atm(.not. mediator_present)
        if (mediator_present) then
           call advertise_fields(gcomp, flds_scalar_name, rc)
           if (ChkErr(rc,__LINE__,u_FILE_u)) return

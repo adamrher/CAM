@@ -20,6 +20,7 @@ save
 !   cam_ctrl_init
 !   cam_ctrl_set_orbit
 !   cam_ctrl_set_physics_type
+!   cam_ctrl_set_standalone_atm  !+++arh
 
 character(len=cl), protected :: caseid  ! case ID
 character(len=cl), protected :: ctitle  ! case title
@@ -42,6 +43,11 @@ logical, protected :: moist_physics     ! true => moist physics enabled, i.e.,
 
 logical, protected :: brnch_retain_casename ! true => branch run may use same caseid as
                                             !         the run being branched from
+
+!+++arh
+logical, protected :: standalone_atm = .false. ! true => CAM is the only prognostic component;
+                                               !         all other components are stubs and the
+                                               !         mediator is not present
 
 real(r8), protected :: eccen       ! Earth's eccentricity factor (unitless) (typically 0 to 0.1)
 real(r8), protected :: obliqr      ! Earth's obliquity in radians
@@ -104,6 +110,9 @@ subroutine cam_ctrl_init( &
 
       if (aqua_planet) write(iulog,*) 'Run model in "AQUA_PLANET" mode'
 
+!+++arh
+      if (standalone_atm) write(iulog,*) 'Run model in standalone mode (no mediator present)'
+
    end if
 
 end subroutine cam_ctrl_init
@@ -123,6 +132,21 @@ subroutine cam_ctrl_set_orbit(eccen_in, obliqr_in, lambm0_in, mvelpp_in)
    mvelpp = mvelpp_in
 
 end subroutine cam_ctrl_set_orbit
+
+!--------------------------------------------------------------------------------------------------
+
+!+++arh
+subroutine cam_ctrl_set_standalone_atm(standalone_atm_in)
+
+   ! Called from the NUOPC cap during the advertise phase, based on the
+   ! mediator_present driver attribute (false when CAM is the only
+   ! prognostic component and all other components are stubs).
+
+   logical, intent(in) :: standalone_atm_in
+
+   standalone_atm = standalone_atm_in
+
+end subroutine cam_ctrl_set_standalone_atm
 
 !--------------------------------------------------------------------------------------------------
 

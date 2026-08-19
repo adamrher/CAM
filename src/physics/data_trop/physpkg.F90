@@ -24,6 +24,8 @@ module physpkg
   use phys_control,     only: use_hemco ! Use Harmonized Emissions Component (HEMCO)
 
   use cam_control_mod,  only: ideal_phys, adiabatic
+!+++arh
+  use cam_control_mod,  only: standalone_atm
   use phys_control,     only: phys_do_flux_avg, phys_getopts, waccmx_is
   use scamMod,          only: single_column, scm_crm_mode
   use flux_avg,         only: flux_avg_init
@@ -1143,6 +1145,11 @@ contains
 
     call phys_timestep_init(phys_state, cam_in, cam_out, pbuf2d)
 
+!+++arh -- overwrite srf radiation vars with nudging targets
+    if (standalone_atm) then
+      call phys_set_srf_radvars(cam_in)
+    end if
+
     call t_stopf ('physpkg_st1')
 
 #ifdef TRACER_CHECK
@@ -1272,6 +1279,12 @@ contains
     call lightning_no_prod( phys_state, pbuf2d, cam_in )
     call t_stopf ('lightning_no_prod')
 
+!+++arh -- re-apply nudging targets to srf radiation vars in case the
+!          coupler modified cam_in between tphysbc and tphysac
+    if (standalone_atm) then
+      call phys_set_srf_radvars(cam_in)
+    end if
+
     call t_barrierf('sync_ac_physics', mpicom)
     call t_startf ('ac_physics')
     call t_adj_detailf(+1)
@@ -1312,6 +1325,64 @@ contains
     call t_stopf ('physpkg_st2')
 
   end subroutine phys_run2
+
+!+++arh
+  !=======================================================================
+  subroutine phys_set_srf_radvars(cam_in)
+    !-----------------------------------------------------------------------
+    !
+    ! Purpose: Overwrite surface radiation variables in cam_in with the
+    !          nudging target values for the current time-step. Must be
+    !          called after phys_timestep_init, which updates the targets.
+    !
+    !-----------------------------------------------------------------------
+    use phys_grid, only: get_ncols_p
+    use nudging,   only: get_nudging_target
+
+    type(cam_in_t), intent(inout) :: cam_in(begchunk:endchunk)
+
+    integer :: c                                 ! chunk index
+    integer :: ncol                              ! number of columns
+    character(len=16) :: NUDGENAM
+    real(r8) :: nudge_work(pcols,begchunk:endchunk)
+
+    NUDGENAM = 'rad_lwup'
+    call get_nudging_target(NUDGENAM,nudge_work)
+    do c=begchunk, endchunk
+       ncol = get_ncols_p(c)
+       cam_in(c)%lwup(:ncol) = nudge_work(:ncol,c)
+    end do
+
+    NUDGENAM = 'ASDIR'
+    call get_nudging_target(NUDGENAM,nudge_work)
+    do c=begchunk, endchunk
+       ncol = get_ncols_p(c)
+       cam_in(c)%asdir(:ncol) = nudge_work(:ncol,c)
+    end do
+
+    NUDGENAM = 'ASDIF'
+    call get_nudging_target(NUDGENAM,nudge_work)
+    do c=begchunk, endchunk
+       ncol = get_ncols_p(c)
+       cam_in(c)%asdif(:ncol) = nudge_work(:ncol,c)
+    end do
+
+    NUDGENAM = 'ALDIR'
+    call get_nudging_target(NUDGENAM,nudge_work)
+    do c=begchunk, endchunk
+       ncol = get_ncols_p(c)
+       cam_in(c)%aldir(:ncol) = nudge_work(:ncol,c)
+    end do
+
+    NUDGENAM = 'ALDIF'
+    call get_nudging_target(NUDGENAM,nudge_work)
+    do c=begchunk, endchunk
+       ncol = get_ncols_p(c)
+       cam_in(c)%aldif(:ncol) = nudge_work(:ncol,c)
+    end do
+
+  end subroutine phys_set_srf_radvars
+  !=======================================================================
 
   !
   !-----------------------------------------------------------------------
@@ -1451,6 +1522,7 @@ contains
     use aerosol_state_mod, only: aerosol_state
     use aerosol_instances_mod, only: aerosol_instances_get_props, &
          aerosol_instances_get_num_models, aerosol_instances_get_state
+
     !
     ! Arguments
     !
@@ -1699,7 +1771,7 @@ contains
     ! Apply tracer surface fluxes to lowest model layer
     !===================================================
     call t_startf('clubb_emissions_tend')
-
+!+++arh -- don't think this does anything for -nochem
     call clubb_emissions_cam(state, cam_in, ptend)
 
     call physics_update(state, ptend, ztodt, tend)
@@ -1776,6 +1848,14 @@ contains
              if (trim(cam_take_snapshot_before) == "clubb_tend_cam") then
                 call cam_snapshot_all_outfld_tphysac(cam_snapshot_before_num, state, tend, cam_in, cam_out, pbuf, &
                      fh2o, surfric, obklen, flx_heat, cmfmc, dlf, det_s, det_ice, net_flx)
+             end if
+
+!+++arh -- zero out surface fluxes
+             if (standalone_atm) then
+               cam_in%shf(:ncol) = 0._r8
+               cam_in%cflx(:ncol,1) = 0._r8
+               cam_in%wsx(:ncol) = 0._r8
+               cam_in%wsy(:ncol) = 0._r8
              end if
 
              call clubb_tend_cam(state, ptend, pbuf, cld_macmic_ztodt,&
