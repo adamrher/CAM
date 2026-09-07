@@ -497,9 +497,29 @@ module clubb_intr
   integer :: &
     cmfmc_sh_idx = 0
 
-  integer :: &
-    prec_sh_idx, &
-    snow_sh_idx
+  !+++arh prec_sh_idx/snow_sh_idx removed: MF precip is now written to the
+  !       DEEP precip pbuf fields (PREC_DP/SNOW_DP, indices below)
+
+  !+++arh deep-convection pbuf indices for the MF-plume deep hookup
+  ! (RPRDDP/NEVAPR_DPCU/PREC_DP/SNOW_DP are registered by convect_deep_register
+  !  when deep_scheme='off'; the ZM_* gathered arrays are registered below in
+  !  clubb_register_cam since zm_conv_register does not run)
+  integer :: prec_dp_idx     = 0
+  integer :: snow_dp_idx     = 0
+  integer :: rprddp_idx      = 0
+  integer :: nevapr_dpcu_idx = 0
+  integer :: zm_dsubcld_idx  = 0
+  integer :: zm_mu_idx       = 0
+  integer :: zm_eu_idx       = 0
+  integer :: zm_du_idx       = 0
+  integer :: zm_md_idx       = 0
+  integer :: zm_ed_idx       = 0
+  integer :: zm_dp_idx       = 0
+  integer :: zm_jt_idx       = 0
+  integer :: zm_maxg_idx     = 0
+  integer :: zm_ideep_idx    = 0
+  integer :: rprdsh_idx      = 0
+  integer :: nevapr_shcu_idx = 0
 
   integer ::           &
     ztopmn_idx,        &
@@ -510,6 +530,19 @@ module clubb_intr
     ddcpmn_idx,        &
     cbm1_idx,          &
     cbm1_macmic_idx
+
+  !+++arh macmic accumulators for the deep-hookup variables (physpkg pbuf so
+  !       they persist across the macmic iterations within a physics timestep)
+  integer ::               &
+    mfup_macmic_idx  = 0,  &
+    entup_macmic_idx = 0,  &
+    detup_macmic_idx = 0,  &
+    mfdn_macmic_idx  = 0,  &
+    entdn_macmic_idx = 0,  &
+    detdn_macmic_idx = 0,  &
+    sqtac_macmic_idx = 0,  &
+    sqtev_macmic_idx = 0,  &
+    kctop_macmic_idx = 0
 
   contains
 
@@ -534,6 +567,8 @@ module clubb_intr
     !  Add CLUBB fields to pbuf
     use physics_buffer,  only: pbuf_add_field, dtype_r8, dtype_i4, dyn_time_lvls
     use subcol_utils,    only: subcol_get_scheme
+!+++arh
+    use cam_abortutils,  only: endrun
 
     integer :: cld_macmic_num_steps
 
@@ -668,6 +703,41 @@ module clubb_intr
       call pbuf_add_field('DDCPMN'             ,'global' ,  dtype_r8, (/clubb_mf_cp_ndt,pcols,clubb_mf_nup/), ddcpmn_idx)
       call pbuf_add_field('CBM1'               ,'global' ,  dtype_r8, (/pcols/), cbm1_idx)
       call pbuf_add_field('CBM1_MACMIC'        ,'physpkg',  dtype_r8, (/pcols/), cbm1_macmic_idx)
+
+      !+++arh register the ZM gathered-array pbuf fields normally registered by
+      ! zm_conv_register, so that zm_conv_convtran_run (tracer transport) and
+      ! aero_convproc (aerosol transport/activation/scavenging) can operate on
+      ! the CLUBB-MF plume ensemble when deep_scheme='off'.  Registering these
+      ! with deep_scheme='ZM' would duplicate zm_conv_register, so guard it.
+      if (trim(deep_scheme) /= 'off') then
+        call endrun('clubb_register_cam: CLUBB-MF deep hookup requires deep_scheme=off '// &
+                    '(ZM_* pbuf fields would be registered twice)')
+      end if
+      call pbuf_add_field('ZM_MU',      'physpkg', dtype_r8, (/pcols,pver/), zm_mu_idx)
+      call pbuf_add_field('ZM_EU',      'physpkg', dtype_r8, (/pcols,pver/), zm_eu_idx)
+      call pbuf_add_field('ZM_DU',      'physpkg', dtype_r8, (/pcols,pver/), zm_du_idx)
+      call pbuf_add_field('ZM_MD',      'physpkg', dtype_r8, (/pcols,pver/), zm_md_idx)
+      call pbuf_add_field('ZM_ED',      'physpkg', dtype_r8, (/pcols,pver/), zm_ed_idx)
+      call pbuf_add_field('ZM_DP',      'physpkg', dtype_r8, (/pcols,pver/), zm_dp_idx)
+      call pbuf_add_field('ZM_DSUBCLD', 'physpkg', dtype_r8, (/pcols/),      zm_dsubcld_idx)
+      call pbuf_add_field('ZM_JT',      'physpkg', dtype_i4, (/pcols/),      zm_jt_idx)
+      call pbuf_add_field('ZM_MAXG',    'physpkg', dtype_i4, (/pcols/),      zm_maxg_idx)
+      call pbuf_add_field('ZM_IDEEP',   'physpkg', dtype_i4, (/pcols/),      zm_ideep_idx)
+
+      !+++arh macmic accumulators for the deep-hookup variables.  KCTOP holds
+      !       the HIGHEST ensemble plume top over the nadv/macmic sub-cycles;
+      !       the final gathering (ZM_IDEEP) keys off it: a column is active
+      !       if its plume top cleared the first momentum interface
+      !       (int(kctop) > 1) at any point in the sub-cycles.
+      call pbuf_add_field('MFUP_MACMIC' ,'physpkg', dtype_r8, (/pcols,nzm_clubb/), mfup_macmic_idx)
+      call pbuf_add_field('ENTUP_MACMIC','physpkg', dtype_r8, (/pcols,nzm_clubb/), entup_macmic_idx)
+      call pbuf_add_field('DETUP_MACMIC','physpkg', dtype_r8, (/pcols,nzm_clubb/), detup_macmic_idx)
+      call pbuf_add_field('MFDN_MACMIC' ,'physpkg', dtype_r8, (/pcols,nzm_clubb/), mfdn_macmic_idx)
+      call pbuf_add_field('ENTDN_MACMIC','physpkg', dtype_r8, (/pcols,nzm_clubb/), entdn_macmic_idx)
+      call pbuf_add_field('DETDN_MACMIC','physpkg', dtype_r8, (/pcols,nzm_clubb/), detdn_macmic_idx)
+      call pbuf_add_field('SQTAC_MACMIC','physpkg', dtype_r8, (/pcols,nzt_clubb/), sqtac_macmic_idx)
+      call pbuf_add_field('SQTEV_MACMIC','physpkg', dtype_r8, (/pcols,nzt_clubb/), sqtev_macmic_idx)
+      call pbuf_add_field('KCTOP_MACMIC','physpkg', dtype_r8, (/pcols/),           kctop_macmic_idx)
     end if
 
 #endif
@@ -1664,8 +1734,28 @@ end subroutine clubb_init_cnst
     npccn_idx           = pbuf_get_index('NPCCN')
 
     ! CLUBB+MF
-    prec_sh_idx  = pbuf_get_index('PREC_SH')
-    snow_sh_idx  = pbuf_get_index('SNOW_SH')
+    !+++arh PREC_SH/SNOW_SH index fetches removed: MF precip is now written to
+    !       the DEEP precip pbuf fields (PREC_DP/SNOW_DP, fetched below)
+
+    !+++arh deep-convection pbuf indices for the MF-plume deep hookup
+    if (do_clubb_mf) then
+      prec_dp_idx     = pbuf_get_index('PREC_DP')
+      snow_dp_idx     = pbuf_get_index('SNOW_DP')
+      rprddp_idx      = pbuf_get_index('RPRDDP')
+      nevapr_dpcu_idx = pbuf_get_index('NEVAPR_DPCU')
+      zm_mu_idx       = pbuf_get_index('ZM_MU')
+      zm_eu_idx       = pbuf_get_index('ZM_EU')
+      zm_du_idx       = pbuf_get_index('ZM_DU')
+      zm_md_idx       = pbuf_get_index('ZM_MD')
+      zm_ed_idx       = pbuf_get_index('ZM_ED')
+      zm_dp_idx       = pbuf_get_index('ZM_DP')
+      zm_dsubcld_idx  = pbuf_get_index('ZM_DSUBCLD')
+      zm_jt_idx       = pbuf_get_index('ZM_JT')
+      zm_maxg_idx     = pbuf_get_index('ZM_MAXG')
+      zm_ideep_idx    = pbuf_get_index('ZM_IDEEP')
+    end if
+    rprdsh_idx      = pbuf_get_index('RPRDSH')
+    nevapr_shcu_idx = pbuf_get_index('NEVAPR_SHCU')
 
     ! Scalars aren't in use, set all indices to -1
     sclr_idx%iisclr_rt  = -1
@@ -2376,8 +2466,37 @@ end subroutine clubb_init_cnst
     real(r8), pointer, dimension(:,:) :: wpthlp_clubb_gw_mc_pbuf
 
     ! CLUBB-MF pointers
-    real(r8),pointer :: prec_sh_pbuf(:)   ! total precipitation from MF
-    real(r8),pointer :: snow_sh_pbuf(:)   ! snow from MF
+    !+++arh MF precip goes to the deep-convection precip pbuf fields
+    real(r8),pointer :: prec_dp_pbuf(:)   ! total precipitation from MF
+    real(r8),pointer :: snow_dp_pbuf(:)   ! snow from MF
+
+    !+++arh deep-hookup pbuf pointers
+    real(r8), pointer :: rprddp(:,:)    ! Deep conv precip production (kg/kg/s - grid avg)
+    real(r8), pointer :: evapcdp(:,:)   ! Deep conv precip evaporation (kg/kg/s - grid avg)
+    real(r8), pointer :: mu(:,:)        ! Updraft mass flux (positive) (pcols,pver)
+    real(r8), pointer :: md(:,:)        ! Downdraft mass flux (negative) (pcols,pver)
+    real(r8), pointer :: du(:,:)        ! Mass detrain rate from updraft (pcols,pver)
+    real(r8), pointer :: eu(:,:)        ! Mass entrain rate into updraft (pcols,pver)
+    real(r8), pointer :: ed(:,:)        ! Mass entrain rate into downdraft (pcols,pver)
+    real(r8), pointer :: dpg(:,:)       ! Delta pressure between interfaces, mb (pcols,pver)
+    real(r8), pointer :: dsubcld(:)     ! Delta pressure from cloud base to sfc (pcols)
+    integer,  pointer :: jt(:)          ! Index of cloud top for each column (pcols)
+    integer,  pointer :: maxg(:)        ! Index of cloud base for each column (pcols)
+    integer,  pointer :: ideep(:)       ! Gathering array (pcols)
+    real(r8), pointer :: rprdsh(:,:)    ! Shallow conv precip production (zeroed for deep hookup)
+    real(r8), pointer :: evapcsh(:,:)   ! Shallow conv precip evaporation (zeroed for deep hookup)
+
+    !+++arh macmic accumulators for the deep-hookup variables
+    real(r8), pointer :: s_mfup_macmic(:,:)
+    real(r8), pointer :: s_entup_macmic(:,:)
+    real(r8), pointer :: s_detup_macmic(:,:)
+    real(r8), pointer :: s_mfdn_macmic(:,:)
+    real(r8), pointer :: s_entdn_macmic(:,:)
+    real(r8), pointer :: s_detdn_macmic(:,:)
+    real(r8), pointer :: mf_sqtac_macmic(:,:)
+    real(r8), pointer :: mf_sqtev_macmic(:,:)
+    real(r8), pointer :: mf_kctop_macmic(:)  ! highest plume top over the sub-cycles; also
+                                             ! the gathering (activity) criterion
 
     real(r8), pointer :: ztopmn(:,:,:)
     real(r8), pointer :: ztopma(:,:)
@@ -2499,7 +2618,11 @@ end subroutine clubb_init_cnst
       mf_sqtup,   mf_sthlup,     &
       mf_sqtdn,   mf_sthldn,     &
       mf_sqt,     mf_sthl,       &
-      mf_qc_zt,   mf_cloudfrac_zt
+      mf_qc_zt,   mf_cloudfrac_zt, &
+      !+++arh deep-hookup: ensemble plume autoconversion / rain evaporation
+      mf_sqtac,   mf_sqtev, &
+      !+++arh deep-hookup nadv-subcycle accumulators
+      mf_sqtac_nadv, mf_sqtev_nadv
 
     real(r8), dimension(state%ncol,nzm_clubb) :: &
       thlp2_rad,                &
@@ -2545,6 +2668,12 @@ end subroutine clubb_init_cnst
       s_awthldn,  s_awqtdn, s_awudn, s_awvdn,      &
       s_awthl,    s_awqt,        &
       s_awu,      s_awv,         &
+      !+++arh deep-hookup: ensemble plume mass flux / entrainment / detrainment
+      s_mfup,     s_entup,   s_detup,  &
+      s_mfdn,     s_entdn,   s_detdn,  &
+      !+++arh deep-hookup nadv-subcycle accumulators
+      s_mfup_nadv, s_entup_nadv, s_detup_nadv, &
+      s_mfdn_nadv, s_entdn_nadv, s_detdn_nadv, &
       mf_precc,                  &
       ! MF work arrays (of size NCOL)
 
@@ -2792,6 +2921,13 @@ end subroutine clubb_init_cnst
                                             mf_cbm1,       mf_cbm1_nadv,   &
                                                            mf_freq_nadv
 
+    !+++arh deep-hookup: ensemble plume-top index per column, and gathering /
+    ! mass-flux consistency work variables.  mf_kctop_nadv holds the highest
+    ! kctop over the nadv subcycles (also the gathering/activity criterion).
+    real(r8), dimension(state%ncol)      :: mf_kctop, mf_kctop_nadv
+    integer                              :: lengath, tmptop, kcam, icol
+    real(r8)                             :: tmpcfl, tmpnet
+
     real(r8), dimension(state%ncol,pver) :: esat,      rh
     real(r8), dimension(state%ncol,pver) :: mq,        mqsat
     real(r8), dimension(state%ncol)      :: rhlev,     rhinv
@@ -2899,8 +3035,12 @@ end subroutine clubb_init_cnst
     call pbuf_get_field(pbuf, icwmrsh_idx,        sh_icwmr_pbuf)
     call pbuf_get_field(pbuf, cmfmc_sh_idx,       cmfmc_sh_pbuf)
 
-    call pbuf_get_field(pbuf, prec_sh_idx, prec_sh_pbuf )
-    call pbuf_get_field(pbuf, snow_sh_idx, snow_sh_pbuf )
+    !+++arh MF precip is written to the DEEP precip pbuf fields (indices are
+    !       only fetched when do_clubb_mf is active, so guard the get_field)
+    if (do_clubb_mf) then
+       call pbuf_get_field(pbuf, prec_dp_idx, prec_dp_pbuf )
+       call pbuf_get_field(pbuf, snow_dp_idx, snow_dp_pbuf )
+    end if
 
     if (do_clubb_mf) then
        call pbuf_get_field(pbuf, tpert_idx, tpert)
@@ -2915,6 +3055,17 @@ end subroutine clubb_init_cnst
 
        call pbuf_get_field(pbuf, cbm1_idx, cbm1)
        call pbuf_get_field(pbuf, cbm1_macmic_idx, cbm1_macmic)
+
+       !+++arh macmic accumulators for the deep-hookup variables
+       call pbuf_get_field(pbuf, mfup_macmic_idx,  s_mfup_macmic)
+       call pbuf_get_field(pbuf, entup_macmic_idx, s_entup_macmic)
+       call pbuf_get_field(pbuf, detup_macmic_idx, s_detup_macmic)
+       call pbuf_get_field(pbuf, mfdn_macmic_idx,  s_mfdn_macmic)
+       call pbuf_get_field(pbuf, entdn_macmic_idx, s_entdn_macmic)
+       call pbuf_get_field(pbuf, detdn_macmic_idx, s_detdn_macmic)
+       call pbuf_get_field(pbuf, sqtac_macmic_idx, mf_sqtac_macmic)
+       call pbuf_get_field(pbuf, sqtev_macmic_idx, mf_sqtev_macmic)
+       call pbuf_get_field(pbuf, kctop_macmic_idx, mf_kctop_macmic)
 
     end if
 
@@ -3333,6 +3484,17 @@ end subroutine clubb_init_cnst
          ddcp_macmic(:ncol,:) = 0._r8
          cbm1_macmic(:ncol) = 0._r8
 
+         !+++arh macmic accumulators for the deep-hookup variables
+         s_mfup_macmic(:ncol,:)   = 0._r8
+         s_entup_macmic(:ncol,:)  = 0._r8
+         s_detup_macmic(:ncol,:)  = 0._r8
+         s_mfdn_macmic(:ncol,:)   = 0._r8
+         s_entdn_macmic(:ncol,:)  = 0._r8
+         s_detdn_macmic(:ncol,:)  = 0._r8
+         mf_sqtac_macmic(:ncol,:) = 0._r8
+         mf_sqtev_macmic(:ncol,:) = 0._r8
+         mf_kctop_macmic(:ncol)   = 0._r8
+
       end if
 
       !+++ARH - Temporary hack - pbuf_set_field is apparently not taking?
@@ -3357,6 +3519,17 @@ end subroutine clubb_init_cnst
       mf_qtforcdn_nadv(:ncol,:nzt_clubb)  = 0._r8
       mf_thlforc_nadv(:ncol,:nzt_clubb)   = 0._r8
       mf_qtforc_nadv(:ncol,:nzt_clubb)    = 0._r8
+
+      !+++arh deep-hookup nadv-subcycle accumulators
+      s_mfup_nadv(:ncol,:nzm_clubb)   = 0._r8
+      s_entup_nadv(:ncol,:nzm_clubb)  = 0._r8
+      s_detup_nadv(:ncol,:nzm_clubb)  = 0._r8
+      s_mfdn_nadv(:ncol,:nzm_clubb)   = 0._r8
+      s_entdn_nadv(:ncol,:nzm_clubb)  = 0._r8
+      s_detdn_nadv(:ncol,:nzm_clubb)  = 0._r8
+      mf_sqtac_nadv(:ncol,:nzt_clubb) = 0._r8
+      mf_sqtev_nadv(:ncol,:nzt_clubb) = 0._r8
+      mf_kctop_nadv(:ncol)            = 0._r8
 
       max_cfl_nadv(:ncol) = 0._r8
    end if
@@ -4111,8 +4284,14 @@ end subroutine clubb_init_cnst
                              mf_sqtup(i,:),    mf_sthlup(i,:),                                                       & ! output
                              mf_sqtdn(i,:),    mf_sthldn(i,:),                                                       & ! output
                              mf_sqt(i,:),      mf_sthl(i,:),                                                         & ! output
+!+++arh
+                             mf_sqtac(i,:),    mf_sqtev(i,:),                                                        & ! output
                              mf_precc(i,:),                                                                          & ! output
-                             mf_ztop(i,:),     mf_L0(i,:) )
+                             mf_ztop(i,:),     mf_L0(i,:),                                                           &
+                             !+++arh ensemble mf/ent/det profiles + plume top for the deep-convection hookup
+                             s_mfup(i,:),      s_entup(i,:),    s_detup(i,:),                                        &
+                             s_mfdn(i,:),      s_entdn(i,:),    s_detdn(i,:),                                        &
+                             mf_kctop(i) )
 
         end do
 
@@ -4206,6 +4385,20 @@ end subroutine clubb_init_cnst
            ! surface precip, [kg/m2/s]->[m/s]
            mf_precc_nadv(i) = mf_precc_nadv(i) + mf_precc(i,gr%k_lb_zm)/1000._r8
            mf_snow_nadv(i)  = 0._r8
+
+           !+++arh accumulate the deep-hookup variables over the nadv subcycles.
+           s_mfup_nadv(i,:nzm_clubb)   = s_mfup_nadv(i,:nzm_clubb)   + s_mfup(i,:nzm_clubb)
+           s_entup_nadv(i,:nzm_clubb)  = s_entup_nadv(i,:nzm_clubb)  + s_entup(i,:nzm_clubb)
+           s_detup_nadv(i,:nzm_clubb)  = s_detup_nadv(i,:nzm_clubb)  + s_detup(i,:nzm_clubb)
+           s_mfdn_nadv(i,:nzm_clubb)   = s_mfdn_nadv(i,:nzm_clubb)   + s_mfdn(i,:nzm_clubb)
+           s_entdn_nadv(i,:nzm_clubb)  = s_entdn_nadv(i,:nzm_clubb)  + s_entdn(i,:nzm_clubb)
+           s_detdn_nadv(i,:nzm_clubb)  = s_detdn_nadv(i,:nzm_clubb)  + s_detdn(i,:nzm_clubb)
+           mf_sqtac_nadv(i,:nzt_clubb) = mf_sqtac_nadv(i,:nzt_clubb) + mf_sqtac(i,:nzt_clubb)
+           mf_sqtev_nadv(i,:nzt_clubb) = mf_sqtev_nadv(i,:nzt_clubb) + mf_sqtev(i,:nzt_clubb)
+           ! kctop is not averaged: keep the HIGHEST plume top over the
+           ! subcycles (it doubles as the gathering/activity criterion:
+           ! int(kctop) > 1 means the column was active at some sub-cycle)
+           mf_kctop_nadv(i)            = max(mf_kctop_nadv(i), mf_kctop(i))
 
            ! accumulate over nadv subcycles
            mf_L0_nadv(i,:)     = mf_L0_nadv(i,:) + mf_L0(i,:)
@@ -4633,6 +4826,17 @@ end subroutine clubb_init_cnst
       s_awvup      =      s_awvup(:,nzm_clubb:1:-1)
       s_awvdn      =      s_awvdn(:,nzm_clubb:1:-1)
 
+      !+++arh Deep-hookup ensemble mf/ent/det profiles on momentum levels: the
+      ! nadv accumulators are flipped (the raw per-subcycle arrays hold only
+      ! the last subcycle and are not used downstream).  mf_kctop_nadv needs
+      ! no flip -- kctop is an orientation-independent offset from the surface.
+      s_mfup_nadv  =  s_mfup_nadv(:,nzm_clubb:1:-1)
+      s_entup_nadv = s_entup_nadv(:,nzm_clubb:1:-1)
+      s_detup_nadv = s_detup_nadv(:,nzm_clubb:1:-1)
+      s_mfdn_nadv  =  s_mfdn_nadv(:,nzm_clubb:1:-1)
+      s_entdn_nadv = s_entdn_nadv(:,nzm_clubb:1:-1)
+      s_detdn_nadv = s_detdn_nadv(:,nzm_clubb:1:-1)
+
       ! MF fluxes on momentum levels
       mf_thlflx    =    mf_thlflx(:,nzm_clubb:1:-1)
       mf_thlflxup  =  mf_thlflxup(:,nzm_clubb:1:-1)
@@ -4654,6 +4858,11 @@ end subroutine clubb_init_cnst
       ! edmf_sqtup / edmf_sqtdn.
       mf_sqtup     =     mf_sqtup(:,nzt_clubb:1:-1)
       mf_sqtdn     =     mf_sqtdn(:,nzt_clubb:1:-1)
+
+      !+++arh Deep-hookup plume autoconversion / rain evaporation on thermo
+      ! levels (nadv accumulators, as above)
+      mf_sqtac_nadv = mf_sqtac_nadv(:,nzt_clubb:1:-1)
+      mf_sqtev_nadv = mf_sqtev_nadv(:,nzt_clubb:1:-1)
 
       ! NOTE: mf_rcm needs no flip here -- it is overwritten from mf_rcm_nadv
       ! below, and that accumulator is flipped at the end of this block.
@@ -4769,8 +4978,9 @@ end subroutine clubb_init_cnst
       mf_qc(:ncol,:nzm_clubb)        = mf_qc_nadv(:ncol,:nzm_clubb)/REAL(nadv)
       mf_rcm(:ncol,:nzm_clubb)       = mf_rcm_nadv(:ncol,:nzm_clubb)/REAL(nadv)
       mf_cloudfrac(:ncol,:nzm_clubb) = mf_cloudfrac_nadv(:ncol,:nzm_clubb)/REAL(nadv)
-      prec_sh_pbuf(:ncol)            = mf_precc_nadv(:ncol)/REAL(nadv)
-      snow_sh_pbuf(:ncol)            = mf_snow_nadv(:ncol)/REAL(nadv)
+!+++arh MF precip attributed to the deep fields (PREC_DP/SNOW_DP)
+      prec_dp_pbuf(:ncol)            = mf_precc_nadv(:ncol)/REAL(nadv)
+      snow_dp_pbuf(:ncol)            = mf_snow_nadv(:ncol)/REAL(nadv)
 
       mf_thlforcup_nadv(:ncol,:nzt_clubb) = mf_thlforcup_nadv(:ncol,:nzt_clubb)/REAL(nadv)
       mf_qtforcup_nadv(:ncol,:nzt_clubb)  = mf_qtforcup_nadv(:ncol,:nzt_clubb)/REAL(nadv)
@@ -4780,10 +4990,34 @@ end subroutine clubb_init_cnst
       mf_qtforc_nadv(:ncol,:nzt_clubb)    = mf_qtforc_nadv(:ncol,:nzt_clubb)/REAL(nadv)
       mf_ent_nadv(:ncol,:nzm_clubb)       = mf_ent_nadv(:ncol,:nzm_clubb)/REAL(nadv)
 
+      !+++arh average the deep-hookup variables over the nadv subcycles
+      !       (mf_kctop_nadv is the subcycle max, so it is not averaged)
+      s_mfup_nadv(:ncol,:nzm_clubb)   = s_mfup_nadv(:ncol,:nzm_clubb)/REAL(nadv)
+      s_entup_nadv(:ncol,:nzm_clubb)  = s_entup_nadv(:ncol,:nzm_clubb)/REAL(nadv)
+      s_detup_nadv(:ncol,:nzm_clubb)  = s_detup_nadv(:ncol,:nzm_clubb)/REAL(nadv)
+      s_mfdn_nadv(:ncol,:nzm_clubb)   = s_mfdn_nadv(:ncol,:nzm_clubb)/REAL(nadv)
+      s_entdn_nadv(:ncol,:nzm_clubb)  = s_entdn_nadv(:ncol,:nzm_clubb)/REAL(nadv)
+      s_detdn_nadv(:ncol,:nzm_clubb)  = s_detdn_nadv(:ncol,:nzm_clubb)/REAL(nadv)
+      mf_sqtac_nadv(:ncol,:nzt_clubb) = mf_sqtac_nadv(:ncol,:nzt_clubb)/REAL(nadv)
+      mf_sqtev_nadv(:ncol,:nzt_clubb) = mf_sqtev_nadv(:ncol,:nzt_clubb)/REAL(nadv)
+
       ! accumulate in buffer
       ztopm1_macmic(:ncol,:) = ztopm1_macmic(:ncol,:) + mf_ztopm1_nadv(:ncol,:)
       ddcp_macmic(:ncol,:) = ddcp_macmic(:ncol,:) + mf_ddcp_nadv(:ncol,:)
       cbm1_macmic(:ncol) = cbm1_macmic(:ncol) + mf_cbm1_nadv(:ncol)
+
+      !+++arh accumulate the nadv-averaged deep-hookup variables across the
+      !       macmic iterations; the plume-top index takes the max (highest
+      !       top over all sub-cycles), not the sum
+      s_mfup_macmic(:ncol,:)   = s_mfup_macmic(:ncol,:)   + s_mfup_nadv(:ncol,:nzm_clubb)
+      s_entup_macmic(:ncol,:)  = s_entup_macmic(:ncol,:)  + s_entup_nadv(:ncol,:nzm_clubb)
+      s_detup_macmic(:ncol,:)  = s_detup_macmic(:ncol,:)  + s_detup_nadv(:ncol,:nzm_clubb)
+      s_mfdn_macmic(:ncol,:)   = s_mfdn_macmic(:ncol,:)   + s_mfdn_nadv(:ncol,:nzm_clubb)
+      s_entdn_macmic(:ncol,:)  = s_entdn_macmic(:ncol,:)  + s_entdn_nadv(:ncol,:nzm_clubb)
+      s_detdn_macmic(:ncol,:)  = s_detdn_macmic(:ncol,:)  + s_detdn_nadv(:ncol,:nzm_clubb)
+      mf_sqtac_macmic(:ncol,:) = mf_sqtac_macmic(:ncol,:) + mf_sqtac_nadv(:ncol,:nzt_clubb)
+      mf_sqtev_macmic(:ncol,:) = mf_sqtev_macmic(:ncol,:) + mf_sqtev_nadv(:ncol,:nzt_clubb)
+      mf_kctop_macmic(:ncol)   = max(mf_kctop_macmic(:ncol), mf_kctop_nadv(:ncol))
 
       if (macmic_it == cld_macmic_num_steps) then
 
@@ -4846,6 +5080,161 @@ end subroutine clubb_init_cnst
       mf_cfl_output(:ncol)  = max_cfl_nadv(:ncol)
       mf_freq_output(:ncol) = mf_freq_nadv(:ncol)
 
+!+++arh entire section below (through the rprdsh/evapcsh zeroing) added for the deep hookup
+      ! ------------------------------------------------------------------- !
+      ! Deep-convection hookup:                                             !
+      ! populate the deep-convection pbuf arrays from the MF plume ensemble !
+      ! so that aero_convproc (aerosol transport/activation/scavenging,     !
+      ! convproc_do_aer=.true.) and zm_conv_convtran_run via                !
+      ! convect_deep_tend_2 (tracer transport) operate on the plumes.  Both !
+      ! consumers run later in tphysac this same timestep.  The plume       !
+      ! precip production/evaporation are attributed to the DEEP fields     !
+      ! (RPRDDP/NEVAPR_DPCU) instead of the shallow ones to avoid double    !
+      ! counting in wetdep's cmfdqr = rprddp + rprdsh.                      !
+      !                                                                     !
+      ! The pbuf arrays are only populated on the LAST macmic iteration,    !
+      ! from the deep-hookup variables averaged over all nadv subcycles and !
+      ! macmic iterations.  A column is gathered (ideep) if it had an       !
+      ! active plume ensemble at ANY point in the sub-cycles, i.e. if the   !
+      ! highest plume top (kctop, a max over the sub-cycles) cleared the    !
+      ! first momentum interface.                                           !
+      ! ------------------------------------------------------------------- !
+      if (macmic_it == cld_macmic_num_steps) then
+
+      ! average the macmic accumulators over the macmic iterations, back
+      ! into the working arrays the population code below reads
+      s_mfup(:ncol,:)   = s_mfup_macmic(:ncol,:)/REAL(cld_macmic_num_steps)
+      s_entup(:ncol,:)  = s_entup_macmic(:ncol,:)/REAL(cld_macmic_num_steps)
+      s_detup(:ncol,:)  = s_detup_macmic(:ncol,:)/REAL(cld_macmic_num_steps)
+      s_mfdn(:ncol,:)   = s_mfdn_macmic(:ncol,:)/REAL(cld_macmic_num_steps)
+      s_entdn(:ncol,:)  = s_entdn_macmic(:ncol,:)/REAL(cld_macmic_num_steps)
+      s_detdn(:ncol,:)  = s_detdn_macmic(:ncol,:)/REAL(cld_macmic_num_steps)
+      mf_sqtac(:ncol,:) = mf_sqtac_macmic(:ncol,:)/REAL(cld_macmic_num_steps)
+      mf_sqtev(:ncol,:) = mf_sqtev_macmic(:ncol,:)/REAL(cld_macmic_num_steps)
+      ! plume top: highest kctop over all nadv/macmic sub-cycles (max, no averaging)
+      mf_kctop(:ncol)   = mf_kctop_macmic(:ncol)
+
+      call pbuf_get_field(pbuf, rprddp_idx,      rprddp)  ! precip formation, grid avg (kg/kg/s)
+      call pbuf_get_field(pbuf, nevapr_dpcu_idx, evapcdp) ! precip evaporation rate (kg/kg/s)
+      call pbuf_get_field(pbuf, zm_mu_idx,       mu)
+      call pbuf_get_field(pbuf, zm_eu_idx,       eu)
+      call pbuf_get_field(pbuf, zm_du_idx,       du)
+      call pbuf_get_field(pbuf, zm_md_idx,       md)
+      call pbuf_get_field(pbuf, zm_ed_idx,       ed)
+      call pbuf_get_field(pbuf, zm_dp_idx,       dpg)     ! layer thickness (mb)
+      call pbuf_get_field(pbuf, zm_jt_idx,       jt)      ! top level index of convection
+      call pbuf_get_field(pbuf, zm_maxg_idx,     maxg)    ! launch (cloud-base) level index
+      call pbuf_get_field(pbuf, zm_ideep_idx,    ideep)
+      ! dsubcld is only used by zm and momtran, not by convtran or aero_convproc,
+      ! but zm_conv_tend_2-style consumers read the field, so keep it zeroed
+      call pbuf_get_field(pbuf, zm_dsubcld_idx,  dsubcld)
+
+      mu(:pcols,:pver)  = 0._r8
+      eu(:pcols,:pver)  = 0._r8
+      du(:pcols,:pver)  = 0._r8
+      md(:pcols,:pver)  = 0._r8
+      ed(:pcols,:pver)  = 0._r8
+      dpg(:pcols,:pver) = 0._r8
+      dsubcld(:pcols)   = 0._r8
+      jt(:pcols)    = pver
+      maxg(:pcols)  = pver
+      ideep(:pcols) = 0
+
+      lengath = 0
+      do i=1, ncol
+        ! mf_kctop counts momentum interfaces from the surface, so the CAM
+        ! interface index of the ensemble plume top is pverp-mf_kctop+1; the
+        ! deep-convection cloud-top LEVEL is one above the interface.
+        ! mf_kctop here is the HIGHEST plume top over the nadv/macmic sub-cycles.
+        tmptop = min(max(pverp - int(mf_kctop(i)), top_lev), pver)
+        !+++arh gather every column that was active at ANY point in the
+        !       nadv/macmic sub-cycles (kctop is the max over the sub-cycles,
+        !       so int(kctop) > 1 means the plume top cleared the first
+        !       momentum interface at some sub-cycle)
+        if (int(mf_kctop(i)) > 1) then
+          lengath = lengath + 1
+          ideep(lengath) = i
+          jt(lengath)    = tmptop
+          maxg(lengath)  = pver               ! surface-launched plumes
+          dpg(lengath,:pver) = state_loc%pdel(i,:pver)/100._r8
+        end if
+      end do
+
+      rprddp(:pcols,:pver)  = 0._r8
+      evapcdp(:pcols,:pver) = 0._r8
+      do kcam = top_lev, pver
+        ! CLUBB index of both the CAM layer kcam (thermo grid) and the
+        ! interface at its top (momentum grid)
+        k_clubb = kcam + 1 - top_lev
+        do i=1, lengath
+          icol = ideep(i)
+          ! plume MFs are in kg/m2/s; ZM wants hPa/s.  mu/md at CAM level kcam
+          ! hold the ensemble mass flux at the interface at the layer's top.
+          mu(i,kcam) = s_mfup(icol,k_clubb)*gravit/100._r8
+          md(i,kcam) = s_mfdn(icol,k_clubb)*gravit/100._r8
+          ! plume fractional entrainment [1/m] -> ZM d(massflux)/dp form [1/s]
+          ! (du/ed are rebuilt from exact discrete continuity below)
+          eu(i,kcam) = s_entup(icol,k_clubb)*mu(i,kcam)*dz_g(icol,k_clubb)/dpg(i,kcam)
+        end do
+        do i=1, ncol
+          rprddp(i,kcam)  = -1._r8*mf_sqtac(i,k_clubb)
+          evapcdp(i,kcam) = -1._r8*mf_sqtev(i,k_clubb)
+        end do
+      end do
+
+      ! convtran/convproc REQUIRE (a) a Courant limit mu*dt/dp <= 1 (ZM enforces
+      ! this on its cloud-base closure; violating it lets the flux-form limiters
+      ! remove more tracer than a layer holds -> negative gas concentrations ->
+      ! rrtmgp set_vmr abort) and (b) EXACT discrete continuity
+      ! mu(k) - mu(k+1) = (eu(k)-du(k))*dp(k) with mu(pver+1)=0 (and the
+      ! analogous downdraft relation), which the recursion for the in-updraft
+      ! concentration assumes.  Scale the plume mass fluxes to the Courant
+      ! target, then rebuild du/ed from continuity (keeping the plume-derived
+      ! eu wherever a non-negative du can absorb it).
+      do i=1, lengath
+        ! Courant check against DRY pressure thickness: convtran scales eu/du/ed
+        ! by dp/dpdry and integrates dry-mixing-ratio constituents (the GHGs)
+        ! against dpdry, so the effective Courant number is mu*dt/dpdry.  Target
+        ! 0.5 (rather than the ZM-style 1.0) to suppress the residual flux-form
+        ! limiter overshoots that drive convtran2 QNEG3 negatives.
+        tmpcfl = 0._r8
+        do kcam=1, pver
+          tmpcfl = max(tmpcfl, max(mu(i,kcam), abs(md(i,kcam)))*hdtime &
+                               /(state_loc%pdeldry(ideep(i),kcam)/100._r8))
+        end do
+        if (tmpcfl > 0.5_r8) then
+          mu(i,:pver) = mu(i,:pver)*0.5_r8/tmpcfl
+          md(i,:pver) = md(i,:pver)*0.5_r8/tmpcfl
+          eu(i,:pver) = eu(i,:pver)*0.5_r8/tmpcfl
+        end if
+        do kcam=pver, 1, -1
+          ! updraft: net = d(mu)/dp across layer kcam (mu below surface = 0)
+          if (kcam == pver) then
+            tmpnet = mu(i,kcam)/dpg(i,kcam)
+          else
+            tmpnet = (mu(i,kcam) - mu(i,kcam+1))/dpg(i,kcam)
+          end if
+          eu(i,kcam) = max(eu(i,kcam), tmpnet, 0._r8)
+          du(i,kcam) = eu(i,kcam) - tmpnet
+          ! downdraft: md(k+1) = md(k) - ed(k)*dp(k); ed >= 0
+          if (kcam < pver) then
+            ed(i,kcam) = max((md(i,kcam) - md(i,kcam+1))/dpg(i,kcam), 0._r8)
+          else
+            ed(i,kcam) = 0._r8
+          end if
+        end do
+      end do
+
+      ! plume precip production/evaporation moved to the deep fields above;
+      ! zero the shallow ones so cmfdqr/evapc are not double counted
+      call pbuf_get_field(pbuf, rprdsh_idx,      rprdsh  )
+      call pbuf_get_field(pbuf, nevapr_shcu_idx, evapcsh )
+
+      rprdsh(:pcols,:pver)  = 0._r8
+      evapcsh(:pcols,:pver) = 0._r8
+
+      end if ! macmic_it == cld_macmic_num_steps (deep hookup)
+
     end if !clubbmf
 
     !$acc parallel loop gang vector default(present)
@@ -4891,7 +5280,8 @@ end subroutine clubb_init_cnst
 
       if (do_clubb_mf) then
          ! subtract enthalpy of falling precip from tb
-         te_b = te_b - prec_sh_pbuf(i)*1000._r8*latice*hdtime
+!+++arh
+         te_b = te_b - prec_dp_pbuf(i)*1000._r8*latice*hdtime
       end if
 
       ! Compute the disbalance of total energy, over depth where CLUBB is active
@@ -5388,12 +5778,18 @@ end subroutine clubb_init_cnst
     if (do_clubb_mf) then
        do k = 1, pver-1
           do i = 1, ncol
-             !  While shallow convection is never called, CLUBB+MF uses the shallow cloud fraction and
-             !  shallow in-cloud mixing ratio pbuf variables to couple with radiation.
+             !+++arh For the deep hookup the MF plume cloud is attributed to the DEEP fields
+             !  (DP_FRAC/ICWMRDP feed aero_convproc and wetdep's conicw/cldcu the same
+             !  way ZM's do); shalcu/sh_icwmr stay zero so nothing is double counted.
+             !  concld below is unchanged since it uses deepcu+shalcu.
              if (do_clubb_mf_rad) then
-                shalcu_pbuf(i,k) = clubb_mf_cldfrac_fac*mf_cloudfrac_output(i,k)
-                sh_icwmr_pbuf(i,k) = mf_qc_output(i,k)
+                deepcu_pbuf(i,k) = clubb_mf_cldfrac_fac*mf_cloudfrac_output(i,k)
+                dp_icwmr_pbuf(i,k) = mf_qc_output(i,k)
              end if
+
+             if (deepcu_pbuf(i,k) <= frac_limit .or. dp_icwmr_pbuf(i,k) < ic_limit) then
+                deepcu_pbuf(i,k) = 0._r8
+             endif
 
              if (shalcu_pbuf(i,k) <= frac_limit .or. sh_icwmr_pbuf(i,k) < ic_limit) then
                 shalcu_pbuf(i,k) = 0._r8

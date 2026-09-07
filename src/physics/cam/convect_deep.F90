@@ -14,6 +14,9 @@ module convect_deep
    use shr_kind_mod, only: r8=>shr_kind_r8
    use ppgrid,       only: pver, pcols, pverp
    use cam_logfile,  only: iulog
+   !+++arh flag for the CLUBB-MF deep-convection hookup (plume ensemble drives
+   ! convtran/convproc through the ZM pbuf arrays with deep_scheme='off')
+   use clubb_mf,     only: do_clubb_mf
 
    implicit none
 
@@ -46,6 +49,20 @@ module convect_deep
    integer     ::  snow_dp_idx     = 0
 
    integer     ::  ttend_dp_idx        = 0
+
+   !+++arh pbuf indices of the ZM gathered arrays (registered by clubb_intr when
+   ! the CLUBB-MF deep hookup is active with deep_scheme='off'); used by
+   ! clubb_mf_convtran2 below
+   integer     ::  zm_mu_idx       = 0
+   integer     ::  zm_eu_idx       = 0
+   integer     ::  zm_du_idx       = 0
+   integer     ::  zm_md_idx       = 0
+   integer     ::  zm_ed_idx       = 0
+   integer     ::  zm_dp_idx       = 0
+   integer     ::  zm_dsubcld_idx  = 0
+   integer     ::  zm_jt_idx       = 0
+   integer     ::  zm_maxg_idx     = 0
+   integer     ::  zm_ideep_idx    = 0
 
 !=========================================================================================
   contains
@@ -156,6 +173,24 @@ subroutine convect_deep_init(pref_edge)
   pblh_idx   = pbuf_get_index('pblh')
   tpert_idx  = pbuf_get_index('tpert')
 
+  !+++arh fetch the ZM gathered-array indices registered by clubb_intr for the
+  ! CLUBB-MF deep hookup (deep_scheme='off' only)
+  if (trim(deep_scheme) == 'off' .and. do_clubb_mf) then
+     if (masterproc) write(iulog,*) &
+        'convect_deep: CLUBB-MF deep hookup active: convtran2 will transport '// &
+        'constituents using the MF plume ensemble mass fluxes'
+     zm_mu_idx      = pbuf_get_index('ZM_MU')
+     zm_eu_idx      = pbuf_get_index('ZM_EU')
+     zm_du_idx      = pbuf_get_index('ZM_DU')
+     zm_md_idx      = pbuf_get_index('ZM_MD')
+     zm_ed_idx      = pbuf_get_index('ZM_ED')
+     zm_dp_idx      = pbuf_get_index('ZM_DP')
+     zm_dsubcld_idx = pbuf_get_index('ZM_DSUBCLD')
+     zm_jt_idx      = pbuf_get_index('ZM_JT')
+     zm_maxg_idx    = pbuf_get_index('ZM_MAXG')
+     zm_ideep_idx   = pbuf_get_index('ZM_IDEEP')
+  end if
+
   call addfld ('ICWMRDP', (/ 'lev' /), 'A', 'kg/kg', 'Deep Convection in-cloud water mixing ratio ' )
 
 end subroutine convect_deep_init
@@ -250,7 +285,13 @@ subroutine convect_deep_tend( &
     cld = 0
     ql = 0
     rprd = 0
-    fracis = 0
+    !+++arh with the CLUBB-MF deep hookup, fracis must keep the value 1.0 set by
+    ! tphysbc so that gases are transported by convtran2 in tphysac (wetdep
+    ! later overwrites the aerosol entries); ql/rprd/evapcdp zeroed here are
+    ! repopulated by clubb_tend_cam (tphysac) before any consumer reads them
+    if (.not. do_clubb_mf) then
+       fracis = 0
+    end if
     evapcdp = 0
 
   case('ZM') !    1 ==> Zhang-McFarlane (default)
@@ -298,12 +339,117 @@ subroutine convect_deep_tend_2( state,  ptend,  ztodt, pbuf)
 
    if ( deep_scheme .eq. 'ZM' ) then  ! Zhang-McFarlane
       call zm_conv_tend_2( state,   ptend,  ztodt,  pbuf)
+   !+++arh CLUBB-MF deep hookup: transport constituents with the MF plume ensemble.
+   else if ( deep_scheme .eq. 'off' .and. do_clubb_mf ) then
+      call clubb_mf_convtran2( state, ptend, ztodt, pbuf )
    else
       call physics_ptend_init(ptend, state%psetcols, 'convect_deep')
    end if
 
 
 end subroutine convect_deep_tend_2
+
+!=========================================================================================
+
+!+++arh new subroutine: convective tracer transport driven by the CLUBB-MF plume
+! ensemble.  Mirrors zm_conv_tend_2 (fully pbuf-driven), reading the ZM_*
+! gathered arrays that clubb_tend_cam populated from the plume ensemble.
+subroutine clubb_mf_convtran2( state, ptend, ztodt, pbuf)
+
+   use physics_types,  only: physics_state, physics_ptend, physics_ptend_init
+   use time_manager,   only: get_nstep
+   use physics_buffer, only: physics_buffer_desc, pbuf_get_field
+   use constituents,   only: pcnst, cnst_is_convtran2
+   use ccpp_constituent_prop_mod, only: ccpp_const_props
+   use zm_conv_convtran, only: zm_conv_convtran_run
+   use cam_abortutils, only: endrun
+
+! Arguments
+   type(physics_state), intent(in )   :: state
+   type(physics_ptend), intent(out)   :: ptend
+   type(physics_buffer_desc), pointer :: pbuf(:)
+   real(r8), intent(in) :: ztodt
+
+! Local variables
+   integer :: i
+   integer :: lengath          ! number of columns with active plumes
+   integer :: nstep
+   integer :: ncol
+
+   logical :: lq(pcnst)
+   real(r8), dimension(pcols,pver) :: dpdry
+
+   ! physics buffer fields
+   real(r8), pointer :: fracis(:,:,:)  ! fraction of transported species that are insoluble
+   real(r8), pointer :: mu(:,:)
+   real(r8), pointer :: eu(:,:)
+   real(r8), pointer :: du(:,:)
+   real(r8), pointer :: md(:,:)
+   real(r8), pointer :: ed(:,:)
+   real(r8), pointer :: dp(:,:)
+   real(r8), pointer :: dsubcld(:)
+   integer,  pointer :: jt(:)
+   integer,  pointer :: maxg(:)
+   integer,  pointer :: ideep(:)
+
+   character(len=40)  :: scheme_name
+   character(len=512) :: errmsg
+   integer            :: errflg
+
+   !-----------------------------------------------------------------------------------
+
+   ! transport ONLY the convtran2 constituents (trace gases; aerosols are
+   ! excluded via convproc_do_aer).  The convtran1 species are the PUMAS
+   ! condensate/precip constituents (CLDLIQ/CLDICE/RAINQM/... registered with
+   ! is_convtran1=.true.): transporting those with the plume mass fluxes
+   ! double counts water already carried by the CLUBB-MF qt/thl fluxes and,
+   ! without ZM's compensating heating/detrainment, destabilizes the dycore
+   ! (NaN in w after ~2 weeks in testing).
+   lq(1)  = .false.
+   lq(2:) = cnst_is_convtran2(2:)
+   call physics_ptend_init(ptend, state%psetcols, 'convtran2', lq=lq )
+
+   call pbuf_get_field(pbuf, fracis_idx,     fracis)
+   call pbuf_get_field(pbuf, zm_mu_idx,      mu)
+   call pbuf_get_field(pbuf, zm_eu_idx,      eu)
+   call pbuf_get_field(pbuf, zm_du_idx,      du)
+   call pbuf_get_field(pbuf, zm_md_idx,      md)
+   call pbuf_get_field(pbuf, zm_ed_idx,      ed)
+   call pbuf_get_field(pbuf, zm_dp_idx,      dp)
+   call pbuf_get_field(pbuf, zm_dsubcld_idx, dsubcld)
+   call pbuf_get_field(pbuf, zm_jt_idx,      jt)
+   call pbuf_get_field(pbuf, zm_maxg_idx,    maxg)
+   call pbuf_get_field(pbuf, zm_ideep_idx,   ideep)
+
+   ncol  = state%ncol
+   nstep = get_nstep()
+
+   lengath = count(ideep > 0)
+   if (lengath > ncol) lengath = ncol
+
+   if (any(ptend%lq(:)) .and. lengath > 0) then
+      ! initialize dpdry for call to convtran
+      ! it is used for tracers of dry mixing ratio type
+      dpdry = 0._r8
+      do i = 1, lengath
+         dpdry(i,:) = state%pdeldry(ideep(i),:)/100._r8
+      end do
+
+      ptend%q(:,:,:) = 0._r8
+
+      call zm_conv_convtran_run (ncol, pver,          &
+                  ptend%lq,state%q(:ncol,:,:), pcnst,  mu(:ncol,:), md(:ncol,:),   &
+                  du(:ncol,:), eu(:ncol,:), ed(:ncol,:), dp(:ncol,:), dsubcld(:ncol),  &
+                  jt(:ncol), maxg(:ncol), ideep(:ncol), 1, lengath,  &
+                  nstep,   fracis(:ncol,:,:),  ptend%q(:ncol,:,:), dpdry(:ncol,:), ccpp_const_props, &
+                  scheme_name, errmsg, errflg)
+
+      if (errflg /= 0) then
+         call endrun('clubb_mf_convtran2: From zm_conv_convtran_run: ' // errmsg)
+      end if
+   end if
+
+end subroutine clubb_mf_convtran2
 
 
 end module convect_deep

@@ -88,8 +88,8 @@ module physpkg
   integer ::  snow_pcw_idx       = 0
   integer ::  prec_dp_idx        = 0
   integer ::  snow_dp_idx        = 0
-  integer ::  prec_sh_idx        = 0
-  integer ::  snow_sh_idx        = 0
+!+++arh prec_sh_idx/snow_sh_idx removed: CLUBB-MF precip is carried in the
+!       deep-convection precip pbuf fields (PREC_DP/SNOW_DP)
   integer ::  dlfzm_idx          = 0     ! detrained convective cloud water mixing ratio.
   integer ::  ducore_idx         = 0     ! ducore index in physics buffer
   integer ::  dvcore_idx         = 0     ! dvcore index in physics buffer
@@ -949,8 +949,7 @@ contains
 
     prec_dp_idx  = pbuf_get_index('PREC_DP')
     snow_dp_idx  = pbuf_get_index('SNOW_DP')
-    prec_sh_idx  = pbuf_get_index('PREC_SH')
-    snow_sh_idx  = pbuf_get_index('SNOW_SH')
+!+++arh PREC_SH/SNOW_SH index fetches removed (CLUBB-MF precip now in PREC_DP/SNOW_DP)
 
     dlfzm_idx = pbuf_get_index('DLFZM', ierr)
     cmfmczm_idx = pbuf_get_index('CMFMC_DP', ierr)
@@ -1519,9 +1518,9 @@ contains
     real(r8),pointer :: prec_sed(:)     ! total precip from cloud sedimentation
     real(r8),pointer :: snow_sed(:)     ! snow from cloud ice sedimentation
 
-    ! CLUBB+MF
-    real(r8),pointer :: prec_sh(:)      ! total precipitation from Hack convection
-    real(r8),pointer :: snow_sh(:)      ! snow from Hack convection
+    !+++arh CLUBB+MF precip is carried in the deep-convection pbuf fields
+    real(r8),pointer :: prec_dp(:)      ! total precipitation from CLUBB-MF (deep)
+    real(r8),pointer :: snow_dp(:)      ! snow from CLUBB-MF (deep)
 
     ! Local copies for substepping
     real(r8) :: prec_pcw_macmic(pcols)
@@ -1533,9 +1532,9 @@ contains
     real(r8) :: prec_sed_carma(pcols)          ! total precip from cloud sedimentation (CARMA)
     real(r8) :: snow_sed_carma(pcols)          ! snow from cloud ice sedimentation (CARMA)
 
-    ! CLUBB+MF
-    real(r8) :: prec_sh_macmic(pcols)
-    real(r8) :: snow_sh_macmic(pcols)
+    !+++arh CLUBB+MF
+    real(r8) :: prec_dp_macmic(pcols)
+    real(r8) :: snow_dp_macmic(pcols)
 
     logical :: labort                            ! abort flag
 
@@ -1635,8 +1634,9 @@ contains
     end if
 
     if (do_clubb_mf) then
-       call pbuf_get_field(pbuf, prec_sh_idx, prec_sh )
-       call pbuf_get_field(pbuf, snow_sh_idx, snow_sh )
+!+++arh CLUBB-MF precip now carried in the deep fields
+       call pbuf_get_field(pbuf, prec_dp_idx, prec_dp )
+       call pbuf_get_field(pbuf, snow_dp_idx, snow_dp )
     end if
 
     if (dlfzm_idx > 0) then
@@ -1765,9 +1765,9 @@ contains
        snow_pcw_macmic = 0._r8
 
        if (do_clubb_mf) then
-          ! CLUBB+MF
-          prec_sh_macmic = 0._r8
-          snow_sh_macmic = 0._r8
+          !+++arh CLUBB+MF
+          prec_dp_macmic = 0._r8
+          snow_dp_macmic = 0._r8
        end if
 
        ! contrail parameterization
@@ -1805,7 +1805,8 @@ contains
              ! Since we "added" the reserved liquid back in this routine, we need
              ! to account for it in the energy checker
              if (do_clubb_mf) then
-                flx_cnd(:ncol) = -1._r8*rliq(:ncol) + prec_sh(:ncol)
+!+++arh
+                flx_cnd(:ncol) = -1._r8*rliq(:ncol) + prec_dp(:ncol)
              else
                 flx_cnd(:ncol) = -1._r8*rliq(:ncol)
              end if
@@ -1842,9 +1843,9 @@ contains
           call t_stopf('macrop_tend')
 
           if (do_clubb_mf) then
-             ! CLUBB+MF
-             prec_sh_macmic(:ncol) = prec_sh_macmic(:ncol) + prec_sh(:ncol)
-             snow_sh_macmic(:ncol) = snow_sh_macmic(:ncol) + snow_sh(:ncol)
+             !+++arh CLUBB+MF
+             prec_dp_macmic(:ncol) = prec_dp_macmic(:ncol) + prec_dp(:ncol)
+             snow_dp_macmic(:ncol) = snow_dp_macmic(:ncol) + snow_dp(:ncol)
           end if
 
           !===================================================
@@ -1995,9 +1996,9 @@ contains
        snow_str(:ncol) = snow_pcw(:ncol) + snow_sed(:ncol)
 
        if (do_clubb_mf) then
-          ! CLUBB+MF
-          prec_sh(:ncol) = prec_sh_macmic(:ncol)/cld_macmic_num_steps
-          snow_sh(:ncol) = snow_sh_macmic(:ncol)/cld_macmic_num_steps
+          !+++arh CLUBB+MF
+          prec_dp(:ncol) = prec_dp_macmic(:ncol)/cld_macmic_num_steps
+          snow_dp(:ncol) = snow_dp_macmic(:ncol)/cld_macmic_num_steps
        end if
     endif
 
@@ -2774,8 +2775,7 @@ contains
     ! convective precipitation variables
     real(r8),pointer :: prec_dp(:)                ! total precipitation from ZM convection
     real(r8),pointer :: snow_dp(:)                ! snow from ZM convection
-    real(r8),pointer :: prec_sh(:)                ! total precipitation from Hack convection
-    real(r8),pointer :: snow_sh(:)                ! snow from Hack convection
+!+++arh unused prec_sh/snow_sh pointers removed
 
     ! stratiform precipitation variables
     real(r8),pointer :: prec_str(:)    ! sfc flux of precip from stratiform (m/s)
@@ -3013,8 +3013,7 @@ contains
 
     call pbuf_get_field(pbuf, prec_dp_idx, prec_dp )
     call pbuf_get_field(pbuf, snow_dp_idx, snow_dp )
-    call pbuf_get_field(pbuf, prec_sh_idx, prec_sh )
-    call pbuf_get_field(pbuf, snow_sh_idx, snow_sh )
+!+++arh unused PREC_SH/SNOW_SH fetches removed
 
     call pbuf_get_field(pbuf, prec_str_idx, prec_str )
     call pbuf_get_field(pbuf, snow_str_idx, snow_str )

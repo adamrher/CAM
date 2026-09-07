@@ -3318,10 +3318,15 @@ add_default($nl, 'do_clubb_mf');
 my $clubb_mf = $nl->get_value('do_clubb_mf');
 
 # Deep convection scheme and CLUBB+MF dependency check
-if (defined $do_clubb_mf and $do_clubb_mf =~ /$TRUE/io) {
+if (defined $clubb_mf and $clubb_mf =~ /$TRUE/io) {
     if ($clubb_sgs !~ /$TRUE/io) {
         die "CAM Namelist ERROR: do_clubb_mf is set to .true. but do_clubb_sgs is not active.\n" .
             "CLUBB+MF requires the CLUBB_SGS package to be enabled.\n";
+    }
+    #+++arh CLUBB+MF is only implemented in the cam7 physics driver
+    if ($phys !~ /cam7/) {
+        die "CAM Namelist ERROR: do_clubb_mf is set to .true. but the physics package is '$phys'.\n" .
+            "CLUBB+MF is only supported with cam7 physics (configure with -phys cam7).\n";
     }
     add_default($nl, 'deep_scheme', 'val'=>"'off'");
 } else {
@@ -3751,6 +3756,8 @@ if ($clubb_sgs  =~ /$TRUE/io) {
        add_default($nl, 'do_clubb_mf_coldpool_perplume');
        add_default($nl, 'do_clubb_mf_coldpool_init');
        add_default($nl, 'do_clubb_mf_aloft');
+       add_default($nl, 'do_clubb_mf_aspd');
+       add_default($nl, 'do_clubb_mf_pblcull');
    }
 }
 
