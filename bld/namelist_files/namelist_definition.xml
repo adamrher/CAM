@@ -4810,7 +4810,7 @@ Default: .true.
 If .true. turn on the Arakawa-Schubert positive-definite detrainment limiter,
 which eliminates negative diagnosed detrainment by growing the plume mass flux
 by pure (capped) entrainment and absorbing the change into the plume area.
-Default: .true.
+Default: .false.
 </entry>
 
 <entry id="do_clubb_mf_pblcull" type="logical" category="conv"
@@ -4818,7 +4818,7 @@ Default: .true.
 If .true. cull plumes entirely contained within the PBL: any plume whose ascent
 terminates at or below the PBL top is removed from the ensemble (surface
 closure and PBL-penetrating plumes untouched).
-Default: .true.
+Default: .false.
 </entry>
 
 <!-- CARMA Sectional Microphysics -->

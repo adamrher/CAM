@@ -2385,8 +2385,8 @@
 <do_clubb_mf_coldpool_perplume     > .true.  </do_clubb_mf_coldpool_perplume>
 <clubb_mf_kseed                    > 1       </clubb_mf_kseed>
 <do_clubb_mf_aloft                 > .true.  </do_clubb_mf_aloft>
-<do_clubb_mf_aspd                  > .true.  </do_clubb_mf_aspd>
-<do_clubb_mf_pblcull               > .true.  </do_clubb_mf_pblcull>
+<do_clubb_mf_aspd                  > .false. </do_clubb_mf_aspd>
+<do_clubb_mf_pblcull               > .false. </do_clubb_mf_pblcull>
 
 <!-- Set radiation intervals based on mpas hgrids -->
 <iradlw hgrid="mpasa15"  > 10 </iradlw>

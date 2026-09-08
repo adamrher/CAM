@@ -75,11 +75,11 @@ module clubb_mf
   logical, protected :: do_clubb_mf_coldpool_perplume = .true.
   logical, protected :: do_clubb_mf_lscale_perplume = .true.
   !+++arh Arakawa-Schubert positive-definite detrainment limiter
-  logical, protected :: do_clubb_mf_aspd = .true.
+  logical, protected :: do_clubb_mf_aspd = .false.
   !+++arh cull plumes entirely contained within the PBL: any plume whose ascent
   ! terminates at or below the PBL top is removed from the ensemble (surface
   ! closure and PBL-penetrating plumes untouched)
-  logical, protected :: do_clubb_mf_pblcull = .true.
+  logical, protected :: do_clubb_mf_pblcull = .false.
   logical :: tht_tweaks = .true.
   integer :: mf_num_cin = 5
 
