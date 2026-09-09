@@ -3335,7 +3335,11 @@ if (defined $clubb_mf and $clubb_mf =~ /$TRUE/io) {
 my $deep_scheme = $nl->get_value('deep_scheme');
 
 # Aerosol convective processes
-if (($phys =~ /cam6/ or $phys =~ /cam7/) and $deep_scheme =~ /ZM/) {
+#+++arh also activated when CLUBB-MF is on: the deep hookup populates the ZM_*
+#       pbuf arrays from the plume ensemble so aero_convproc operates on the
+#       plumes (deep_scheme='off'; CLUBB-MF is cam7-only)
+if ((($phys =~ /cam6/ or $phys =~ /cam7/) and $deep_scheme =~ /ZM/)
+    or (defined $clubb_mf and $clubb_mf =~ /$TRUE/io)) {
     add_default($nl, 'convproc_do_aer', 'val'=>'.true.');
     add_default($nl, 'convproc_do_evaprain_atonce', 'val'=>'.true.');
     add_default($nl, 'convproc_pom_spechygro', 'val'=>'0.2D0');

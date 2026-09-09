@@ -530,6 +530,12 @@ module clubb_mf
      !+++arh (used by the downdraft eturb and the do_clubb_mf_aspd limiter)
      real(r8),parameter                     :: max_eturb = 10._r8
      !
+     !+++arh floor on the ensemble mass flux for the deep-hookup ratio
+     !       diagnostics (entup/detup/entdn/detdn): near plume tops the
+     !       mass-flux-weighted entrainment divides by a vanishing mfup while
+     !       upent ~ 1/upw diverges, producing immense (finite) ratios
+     real(r8),parameter                     :: mf_tiny = 1.e-12_r8
+     !
      ! to condensate or not to condensate
      logical                                :: do_condensation = .true.
      !
@@ -1777,7 +1783,7 @@ module clubb_mf
          do i=1,clubb_mf_nup
            entup(k) = entup(k) + rho_zm(k)*upa(k,i)*upw(k,i)*upent(k,i)
          enddo
-         if (mfup(k) > 0._r8) then
+         if (mfup(k) > mf_tiny) then
            entup(k) = entup(k)/mfup(k)
          else
            entup(k) = 0._r8
@@ -1787,7 +1793,7 @@ module clubb_mf
          kn = k - kdir
          kt_dn = k - (1+kdir)/2
          ! updraft: det = ent - d(ln mf)/dz, clipped >= 0
-         if (mfup(kn) > 0._r8 .and. mfup(k) > 0._r8) then
+         if (mfup(kn) > mf_tiny .and. mfup(k) > mf_tiny) then
            detup(k) = entup(k) - (mfup(k) - mfup(kn))/(mfup(kn)*dzt(kt_dn))
            if (detup(k) < 0._r8) detup(k) = 0._r8
          end if
@@ -1796,7 +1802,7 @@ module clubb_mf
          kt = k - (1+kdir)/2
          kn = k - kdir
          ! downdraft grows downward: ent from d(|mf|)/dz descending, det clipped
-         if (abs(mfdn(k)) > 0._r8 .and. abs(mfdn(kn)) > 0._r8) then
+         if (abs(mfdn(k)) > mf_tiny .and. abs(mfdn(kn)) > mf_tiny) then
            entdn(kn) = (abs(mfdn(kn)) - abs(mfdn(k)))/(abs(mfdn(k))*dzt(kt))
            if (entdn(kn) < 0._r8) then
              detdn(kn) = -entdn(kn)

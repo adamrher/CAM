@@ -4387,12 +4387,21 @@ end subroutine clubb_init_cnst
            mf_snow_nadv(i)  = 0._r8
 
            !+++arh accumulate the deep-hookup variables over the nadv subcycles.
+           !       The fractional entrainment/detrainment are RATIO diagnostics
+           !       (mass-flux-weighted per subcycle, denominator = mfup): near
+           !       plume tops the per-subcycle ratio can be immense while the
+           !       same subcycle's mass flux vanishes -- averaging the ratio
+           !       separately from the mass flux breaks that cancellation and
+           !       produced enormous ZM_EU values (aero_convproc courant
+           !       substep count exploded -> nstep-0 hang).  Accumulate the
+           !       entrainment/detrainment MASS FLUX (rate x mf, bounded)
+           !       instead; the population block consumes it directly.
            s_mfup_nadv(i,:nzm_clubb)   = s_mfup_nadv(i,:nzm_clubb)   + s_mfup(i,:nzm_clubb)
-           s_entup_nadv(i,:nzm_clubb)  = s_entup_nadv(i,:nzm_clubb)  + s_entup(i,:nzm_clubb)
-           s_detup_nadv(i,:nzm_clubb)  = s_detup_nadv(i,:nzm_clubb)  + s_detup(i,:nzm_clubb)
+           s_entup_nadv(i,:nzm_clubb)  = s_entup_nadv(i,:nzm_clubb)  + s_entup(i,:nzm_clubb)*s_mfup(i,:nzm_clubb)
+           s_detup_nadv(i,:nzm_clubb)  = s_detup_nadv(i,:nzm_clubb)  + s_detup(i,:nzm_clubb)*s_mfup(i,:nzm_clubb)
            s_mfdn_nadv(i,:nzm_clubb)   = s_mfdn_nadv(i,:nzm_clubb)   + s_mfdn(i,:nzm_clubb)
-           s_entdn_nadv(i,:nzm_clubb)  = s_entdn_nadv(i,:nzm_clubb)  + s_entdn(i,:nzm_clubb)
-           s_detdn_nadv(i,:nzm_clubb)  = s_detdn_nadv(i,:nzm_clubb)  + s_detdn(i,:nzm_clubb)
+           s_entdn_nadv(i,:nzm_clubb)  = s_entdn_nadv(i,:nzm_clubb)  + s_entdn(i,:nzm_clubb)*abs(s_mfdn(i,:nzm_clubb))
+           s_detdn_nadv(i,:nzm_clubb)  = s_detdn_nadv(i,:nzm_clubb)  + s_detdn(i,:nzm_clubb)*abs(s_mfdn(i,:nzm_clubb))
            mf_sqtac_nadv(i,:nzt_clubb) = mf_sqtac_nadv(i,:nzt_clubb) + mf_sqtac(i,:nzt_clubb)
            mf_sqtev_nadv(i,:nzt_clubb) = mf_sqtev_nadv(i,:nzt_clubb) + mf_sqtev(i,:nzt_clubb)
            ! kctop is not averaged: keep the HIGHEST plume top over the
@@ -5172,9 +5181,11 @@ end subroutine clubb_init_cnst
           ! hold the ensemble mass flux at the interface at the layer's top.
           mu(i,kcam) = s_mfup(icol,k_clubb)*gravit/100._r8
           md(i,kcam) = s_mfdn(icol,k_clubb)*gravit/100._r8
-          ! plume fractional entrainment [1/m] -> ZM d(massflux)/dp form [1/s]
-          ! (du/ed are rebuilt from exact discrete continuity below)
-          eu(i,kcam) = s_entup(icol,k_clubb)*mu(i,kcam)*dz_g(icol,k_clubb)/dpg(i,kcam)
+          !+++arh s_entup now carries the sub-cycle-averaged entrainment MASS
+          !       FLUX (fractional entrainment x plume mass flux, kg/m3/s), so
+          !       eu comes from it directly -- no rate x averaged-mf product
+          !       (du/ed are rebuilt from exact discrete continuity below)
+          eu(i,kcam) = s_entup(icol,k_clubb)*(gravit/100._r8)*dz_g(icol,k_clubb)/dpg(i,kcam)
         end do
         do i=1, ncol
           rprddp(i,kcam)  = -1._r8*mf_sqtac(i,k_clubb)
@@ -5197,10 +5208,15 @@ end subroutine clubb_init_cnst
         ! against dpdry, so the effective Courant number is mu*dt/dpdry.  Target
         ! 0.5 (rather than the ZM-style 1.0) to suppress the residual flux-form
         ! limiter overshoots that drive convtran2 QNEG3 negatives.
+        !+++arh the aero_convproc courant number also carries the entrainment
+        !       flux term (eudp = eu*dpdry), so include eu*dt in the cap --
+        !       otherwise its internal substep count ntsub = 1+int(courant)
+        !       is unbounded by the mass-flux cap alone
         tmpcfl = 0._r8
         do kcam=1, pver
           tmpcfl = max(tmpcfl, max(mu(i,kcam), abs(md(i,kcam)))*hdtime &
-                               /(state_loc%pdeldry(ideep(i),kcam)/100._r8))
+                               /(state_loc%pdeldry(ideep(i),kcam)/100._r8) &
+                               + eu(i,kcam)*hdtime)
         end do
         if (tmpcfl > 0.5_r8) then
           mu(i,:pver) = mu(i,:pver)*0.5_r8/tmpcfl
