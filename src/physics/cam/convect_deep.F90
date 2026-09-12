@@ -14,9 +14,6 @@ module convect_deep
    use shr_kind_mod, only: r8=>shr_kind_r8
    use ppgrid,       only: pver, pcols, pverp
    use cam_logfile,  only: iulog
-   !+++arh flag for the CLUBB-MF deep-convection hookup (plume ensemble drives
-   ! convtran/convproc through the ZM pbuf arrays with deep_scheme='off')
-   use clubb_mf,     only: do_clubb_mf
 
    implicit none
 
@@ -50,9 +47,9 @@ module convect_deep
 
    integer     ::  ttend_dp_idx        = 0
 
-   !+++arh pbuf indices of the ZM gathered arrays (registered by clubb_intr when
-   ! the CLUBB-MF deep hookup is active with deep_scheme='off'); used by
-   ! clubb_mf_convtran2 below
+   ! pbuf indices of the ZM gathered arrays, registered below when
+   ! deep_scheme='CLUBB_MF' (the CLUBB-MF plume ensemble provides the deep
+   ! transport); populated by clubb_tend_cam, used by clubb_mf_convtran2 below
    integer     ::  zm_mu_idx       = 0
    integer     ::  zm_eu_idx       = 0
    integer     ::  zm_du_idx       = 0
@@ -63,6 +60,9 @@ module convect_deep
    integer     ::  zm_jt_idx       = 0
    integer     ::  zm_maxg_idx     = 0
    integer     ::  zm_ideep_idx    = 0
+   ! plume-ensemble mean updraft speed (m/s, gathered like ZM_MU;
+   ! populated by clubb_tend_cam, consumed by aero_convproc activation)
+   integer     ::  mf_wup_idx      = 0
 
 !=========================================================================================
   contains
@@ -94,7 +94,7 @@ subroutine convect_deep_register
 !----------------------------------------
 
 
-  use physics_buffer, only : pbuf_add_field, dtype_r8
+  use physics_buffer, only : pbuf_add_field, dtype_r8, dtype_i4
   use zm_conv_intr, only: zm_conv_register
   use phys_control, only: phys_getopts, use_gw_convect_dp
 
@@ -115,6 +115,25 @@ subroutine convect_deep_register
    call pbuf_add_field('NEVAPR_DPCU','physpkg',dtype_r8,(/pcols,pver/),nevapr_dpcu_idx)
    call pbuf_add_field('PREC_DP',    'physpkg',dtype_r8,(/pcols/),     prec_dp_idx)
    call pbuf_add_field('SNOW_DP',    'physpkg',dtype_r8,(/pcols/),     snow_dp_idx)
+
+  case('CLUBB_MF') ! The standard deep fields and the ZM gathered arrays are registered here
+   call pbuf_add_field('ICWMRDP',    'physpkg',dtype_r8,(/pcols,pver/),icwmrdp_idx)
+   call pbuf_add_field('RPRDDP',     'physpkg',dtype_r8,(/pcols,pver/),rprddp_idx)
+   call pbuf_add_field('NEVAPR_DPCU','physpkg',dtype_r8,(/pcols,pver/),nevapr_dpcu_idx)
+   call pbuf_add_field('PREC_DP',    'physpkg',dtype_r8,(/pcols/),     prec_dp_idx)
+   call pbuf_add_field('SNOW_DP',    'physpkg',dtype_r8,(/pcols/),     snow_dp_idx)
+
+   call pbuf_add_field('ZM_MU',      'physpkg', dtype_r8, (/pcols,pver/), zm_mu_idx)
+   call pbuf_add_field('ZM_EU',      'physpkg', dtype_r8, (/pcols,pver/), zm_eu_idx)
+   call pbuf_add_field('ZM_DU',      'physpkg', dtype_r8, (/pcols,pver/), zm_du_idx)
+   call pbuf_add_field('ZM_MD',      'physpkg', dtype_r8, (/pcols,pver/), zm_md_idx)
+   call pbuf_add_field('ZM_ED',      'physpkg', dtype_r8, (/pcols,pver/), zm_ed_idx)
+   call pbuf_add_field('ZM_DP',      'physpkg', dtype_r8, (/pcols,pver/), zm_dp_idx)
+   call pbuf_add_field('ZM_DSUBCLD', 'physpkg', dtype_r8, (/pcols/),      zm_dsubcld_idx)
+   call pbuf_add_field('ZM_JT',      'physpkg', dtype_i4, (/pcols/),      zm_jt_idx)
+   call pbuf_add_field('ZM_MAXG',    'physpkg', dtype_i4, (/pcols/),      zm_maxg_idx)
+   call pbuf_add_field('ZM_IDEEP',   'physpkg', dtype_i4, (/pcols/),      zm_ideep_idx)
+   call pbuf_add_field('MF_WUP',     'physpkg', dtype_r8, (/pcols,pver/), mf_wup_idx)
 
   end select
 
@@ -152,6 +171,10 @@ subroutine convect_deep_init(pref_edge)
      if (masterproc) write(iulog,*)'convect_deep: no deep convection selected'
   case('CLUBB_SGS')
      if (masterproc) write(iulog,*)'convect_deep: CLUBB_SGS selected'
+  case('CLUBB_MF')
+     if (masterproc) write(iulog,*) &
+        'convect_deep: CLUBB-MF selected: the EDMF plume ensemble drives '// &
+        'aero_convproc and convtran2 through the ZM pbuf arrays'
   case('ZM')
      if (masterproc) write(iulog,*)'convect_deep initializing Zhang-McFarlane convection'
      call zm_conv_init(pref_edge)
@@ -173,11 +196,9 @@ subroutine convect_deep_init(pref_edge)
   pblh_idx   = pbuf_get_index('pblh')
   tpert_idx  = pbuf_get_index('tpert')
 
-  !+++arh fetch the ZM gathered-array indices registered by clubb_intr for the
-  ! CLUBB-MF deep hookup (deep_scheme='off' only)
-  if (trim(deep_scheme) == 'off' .and. do_clubb_mf) then
+  if (trim(deep_scheme) == 'CLUBB_MF') then
      if (masterproc) write(iulog,*) &
-        'convect_deep: CLUBB-MF deep hookup active: convtran2 will transport '// &
+        'convect_deep: CLUBB-MF active: convtran2 will transport '// &
         'constituents using the MF plume ensemble mass fluxes'
      zm_mu_idx      = pbuf_get_index('ZM_MU')
      zm_eu_idx      = pbuf_get_index('ZM_EU')
@@ -257,7 +278,7 @@ subroutine convect_deep_tend( &
    call pbuf_get_field(pbuf, icwmrdp_idx, ql    )
 
   select case ( deep_scheme )
-  case('off', 'CLUBB_SGS')
+  case('off', 'CLUBB_SGS', 'CLUBB_MF')
     zero = 0
     mcon = 0
     cme = 0
@@ -285,11 +306,13 @@ subroutine convect_deep_tend( &
     cld = 0
     ql = 0
     rprd = 0
-    !+++arh with the CLUBB-MF deep hookup, fracis must keep the value 1.0 set by
-    ! tphysbc so that gases are transported by convtran2 in tphysac (wetdep
-    ! later overwrites the aerosol entries); ql/rprd/evapcdp zeroed here are
-    ! repopulated by clubb_tend_cam (tphysac) before any consumer reads them
-    if (.not. do_clubb_mf) then
+    ! with CLUBB-MF, fracis (insoluble fraction) must be 1.0 so that
+    ! gases are transported by convtran2 in tphysac (wetdep later overwrites
+    ! the aerosol entries); ql/rprd/evapcdp zeroed here are repopulated by
+    ! clubb_tend_cam before any consumer reads them
+    if (deep_scheme == 'CLUBB_MF') then
+       fracis = 1._r8
+    else
        fracis = 0
     end if
     evapcdp = 0
@@ -339,8 +362,7 @@ subroutine convect_deep_tend_2( state,  ptend,  ztodt, pbuf)
 
    if ( deep_scheme .eq. 'ZM' ) then  ! Zhang-McFarlane
       call zm_conv_tend_2( state,   ptend,  ztodt,  pbuf)
-   !+++arh CLUBB-MF deep hookup: transport constituents with the MF plume ensemble.
-   else if ( deep_scheme .eq. 'off' .and. do_clubb_mf ) then
+   else if ( deep_scheme .eq. 'CLUBB_MF' ) then
       call clubb_mf_convtran2( state, ptend, ztodt, pbuf )
    else
       call physics_ptend_init(ptend, state%psetcols, 'convect_deep')
@@ -351,10 +373,10 @@ end subroutine convect_deep_tend_2
 
 !=========================================================================================
 
-!+++arh new subroutine: convective tracer transport driven by the CLUBB-MF plume
+subroutine clubb_mf_convtran2( state, ptend, ztodt, pbuf)
+! convective tracer transport driven by the CLUBB-MF plume
 ! ensemble.  Mirrors zm_conv_tend_2 (fully pbuf-driven), reading the ZM_*
 ! gathered arrays that clubb_tend_cam populated from the plume ensemble.
-subroutine clubb_mf_convtran2( state, ptend, ztodt, pbuf)
 
    use physics_types,  only: physics_state, physics_ptend, physics_ptend_init
    use time_manager,   only: get_nstep

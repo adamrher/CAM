@@ -2352,7 +2352,6 @@
 
 
 <!-- CLUBB+MF options -->
-<do_clubb_mf                       > .false. </do_clubb_mf>
 <do_clubb_mf_diag                  > .false. </do_clubb_mf_diag>
 <do_clubb_mf_precip                > .true.  </do_clubb_mf_precip>
 <do_clubb_mf_rad                   > .true.  </do_clubb_mf_rad>

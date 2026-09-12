@@ -88,8 +88,6 @@ module physpkg
   integer ::  snow_pcw_idx       = 0
   integer ::  prec_dp_idx        = 0
   integer ::  snow_dp_idx        = 0
-!+++arh prec_sh_idx/snow_sh_idx removed: CLUBB-MF precip is carried in the
-!       deep-convection precip pbuf fields (PREC_DP/SNOW_DP)
   integer ::  dlfzm_idx          = 0     ! detrained convective cloud water mixing ratio.
   integer ::  ducore_idx         = 0     ! ducore index in physics buffer
   integer ::  dvcore_idx         = 0     ! dvcore index in physics buffer
@@ -949,7 +947,6 @@ contains
 
     prec_dp_idx  = pbuf_get_index('PREC_DP')
     snow_dp_idx  = pbuf_get_index('SNOW_DP')
-!+++arh PREC_SH/SNOW_SH index fetches removed (CLUBB-MF precip now in PREC_DP/SNOW_DP)
 
     dlfzm_idx = pbuf_get_index('DLFZM', ierr)
     cmfmczm_idx = pbuf_get_index('CMFMC_DP', ierr)
@@ -1518,9 +1515,16 @@ contains
     real(r8),pointer :: prec_sed(:)     ! total precip from cloud sedimentation
     real(r8),pointer :: snow_sed(:)     ! snow from cloud ice sedimentation
 
-    !+++arh CLUBB+MF precip is carried in the deep-convection pbuf fields
+    ! CLUBB+MF precip is carried in the deep-convection pbuf fields
     real(r8),pointer :: prec_dp(:)      ! total precipitation from CLUBB-MF (deep)
     real(r8),pointer :: snow_dp(:)      ! snow from CLUBB-MF (deep)
+
+    ! CLUBB+MF deep-convection cloud fields (evolve every macmic
+    ! iteration inside clubb_tend_cam; averaged over the sub-cycle
+    ! below, like prec_dp/snow_dp)
+    real(r8),pointer :: dp_frac(:,:)    ! deep convective cloud fraction
+    real(r8),pointer :: dp_icwmr(:,:)   ! deep convection in-cloud water mixing ratio
+    real(r8),pointer :: concld(:,:)     ! convective cloud fraction
 
     ! Local copies for substepping
     real(r8) :: prec_pcw_macmic(pcols)
@@ -1532,9 +1536,12 @@ contains
     real(r8) :: prec_sed_carma(pcols)          ! total precip from cloud sedimentation (CARMA)
     real(r8) :: snow_sed_carma(pcols)          ! snow from cloud ice sedimentation (CARMA)
 
-    !+++arh CLUBB+MF
+    ! CLUBB+MF
     real(r8) :: prec_dp_macmic(pcols)
     real(r8) :: snow_dp_macmic(pcols)
+    real(r8) :: dp_frac_macmic(pcols,pver)
+    real(r8) :: dp_icwmr_macmic(pcols,pver)
+    real(r8) :: concld_macmic(pcols,pver)
 
     logical :: labort                            ! abort flag
 
@@ -1634,9 +1641,14 @@ contains
     end if
 
     if (do_clubb_mf) then
-!+++arh CLUBB-MF precip now carried in the deep fields
        call pbuf_get_field(pbuf, prec_dp_idx, prec_dp )
        call pbuf_get_field(pbuf, snow_dp_idx, snow_dp )
+       ifld = pbuf_get_index('DP_FRAC')
+       call pbuf_get_field(pbuf, ifld, dp_frac)
+       ifld = pbuf_get_index('ICWMRDP')
+       call pbuf_get_field(pbuf, ifld, dp_icwmr)
+       ifld = pbuf_get_index('CONCLD')
+       call pbuf_get_field(pbuf, ifld, concld, start=(/1,1,itim_old/), kount=(/pcols,pver,1/))
     end if
 
     if (dlfzm_idx > 0) then
@@ -1765,9 +1777,11 @@ contains
        snow_pcw_macmic = 0._r8
 
        if (do_clubb_mf) then
-          !+++arh CLUBB+MF
           prec_dp_macmic = 0._r8
           snow_dp_macmic = 0._r8
+          dp_frac_macmic = 0._r8
+          dp_icwmr_macmic = 0._r8
+          concld_macmic = 0._r8
        end if
 
        ! contrail parameterization
@@ -1805,7 +1819,6 @@ contains
              ! Since we "added" the reserved liquid back in this routine, we need
              ! to account for it in the energy checker
              if (do_clubb_mf) then
-!+++arh
                 flx_cnd(:ncol) = -1._r8*rliq(:ncol) + prec_dp(:ncol)
              else
                 flx_cnd(:ncol) = -1._r8*rliq(:ncol)
@@ -1843,9 +1856,11 @@ contains
           call t_stopf('macrop_tend')
 
           if (do_clubb_mf) then
-             !+++arh CLUBB+MF
              prec_dp_macmic(:ncol) = prec_dp_macmic(:ncol) + prec_dp(:ncol)
              snow_dp_macmic(:ncol) = snow_dp_macmic(:ncol) + snow_dp(:ncol)
+             dp_frac_macmic(:ncol,:)  = dp_frac_macmic(:ncol,:)  + dp_frac(:ncol,:)
+             dp_icwmr_macmic(:ncol,:) = dp_icwmr_macmic(:ncol,:) + dp_icwmr(:ncol,:)
+             concld_macmic(:ncol,:)   = concld_macmic(:ncol,:)   + concld(:ncol,:)
           end if
 
           !===================================================
@@ -1996,9 +2011,19 @@ contains
        snow_str(:ncol) = snow_pcw(:ncol) + snow_sed(:ncol)
 
        if (do_clubb_mf) then
-          !+++arh CLUBB+MF
           prec_dp(:ncol) = prec_dp_macmic(:ncol)/cld_macmic_num_steps
           snow_dp(:ncol) = snow_dp_macmic(:ncol)/cld_macmic_num_steps
+          ! The deep-convection cloud fields evolve every macmic iteration
+          ! inside clubb_tend_cam so that in-loop consumers (PUMAS reads
+          ! CLD/CONCLD) stay coupled to the current sub-step; the post-loop
+          ! consumers (aero_model_wetdep, convect_deep_tend_2/aero_convproc,
+          ! conv_water, radiation) get the sub-cycle mean here.
+          dp_frac(:ncol,:)  = dp_frac_macmic(:ncol,:)/cld_macmic_num_steps
+          dp_icwmr(:ncol,:) = dp_icwmr_macmic(:ncol,:)/cld_macmic_num_steps
+          concld(:ncol,:)   = concld_macmic(:ncol,:)/cld_macmic_num_steps
+          ! rebuild total cloud from the averaged deep fraction, matching
+          ! clubb_intr's cld = min(ast + deepcu, 1)
+          cld(:ncol,:) = min(ast(:ncol,:) + dp_frac(:ncol,:), 1._r8)
        end if
     endif
 
@@ -2775,7 +2800,6 @@ contains
     ! convective precipitation variables
     real(r8),pointer :: prec_dp(:)                ! total precipitation from ZM convection
     real(r8),pointer :: snow_dp(:)                ! snow from ZM convection
-!+++arh unused prec_sh/snow_sh pointers removed
 
     ! stratiform precipitation variables
     real(r8),pointer :: prec_str(:)    ! sfc flux of precip from stratiform (m/s)
@@ -3013,7 +3037,6 @@ contains
 
     call pbuf_get_field(pbuf, prec_dp_idx, prec_dp )
     call pbuf_get_field(pbuf, snow_dp_idx, snow_dp )
-!+++arh unused PREC_SH/SNOW_SH fetches removed
 
     call pbuf_get_field(pbuf, prec_str_idx, prec_str )
     call pbuf_get_field(pbuf, snow_str_idx, snow_str )
