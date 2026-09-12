@@ -72,7 +72,7 @@ module clubb_mf
   logical, protected :: do_clubb_mf_ustar = .false.
   logical, protected :: do_clubb_mf_mixd = .false.
   logical, protected :: do_clubb_mf_precip = .true.
-  logical, protected :: do_clubb_mf_rhtke = .true.
+  logical, protected :: do_clubb_mf_rhtke = .false.
   logical, protected :: do_clubb_mf_cmt = .false.
   logical, protected :: do_clubb_mf_aloft = .true.
   logical, protected :: do_clubb_mf_coldpool_init = .false.
@@ -80,6 +80,13 @@ module clubb_mf
   logical, protected :: do_clubb_mf_lscale_perplume = .true.
   logical, protected :: do_clubb_mf_aspd = .false.
   logical, protected :: do_clubb_mf_pblcull = .false.
+  ! shut off the MF plume ensemble where the lower-tropospheric
+  ! inversion is strong (thl700 - thl1000 >= 20 K), mirroring the CLUBB-core
+  ! expldiff criterion (advance_clubb_core_module).  Strong-inversion
+  ! columns are the marine-Sc regime, where CLUBB should own the boundary
+  ! layer; unlike do_clubb_mf_rhtke this is a direct on/off trigger rather
+  ! than an indirect entrainment enhancement.
+  logical, protected :: do_clubb_mf_invswitch = .true.
   logical :: tht_tweaks = .true.
   integer :: mf_num_cin = 5
 
@@ -109,7 +116,7 @@ module clubb_mf
                            clubb_mf_ddexp, do_clubb_mf_mixd, clubb_mf_up_ndt, clubb_mf_cp_ndt, do_clubb_mf_rhtke, do_clubb_mf_cmt, &
                            do_clubb_mf_coldpool_init, do_clubb_mf_coldpool_perplume, do_clubb_mf_lscale_perplume, clubb_mf_kseed, &
                            do_clubb_mf_addtke, do_clubb_mf_aloft, clubb_mf_pwmin, clubb_mf_pwmax, clubb_mf_cldfrac_fac, &
-                           do_clubb_mf_aspd, do_clubb_mf_pblcull
+                           do_clubb_mf_aspd, do_clubb_mf_pblcull, do_clubb_mf_invswitch
 
     if (masterproc) then
       open( newunit=iunit, file=trim(nlfile), status='old' )
@@ -185,6 +192,8 @@ module clubb_mf
     if (ierr /= 0) call endrun(sub//": FATAL: mpi_bcast: do_clubb_mf_aspd")
     call mpi_bcast(do_clubb_mf_pblcull, 1, mpi_logical, mstrid, mpicom, ierr)
     if (ierr /= 0) call endrun(sub//": FATAL: mpi_bcast: do_clubb_mf_pblcull")
+    call mpi_bcast(do_clubb_mf_invswitch, 1, mpi_logical, mstrid, mpicom, ierr)
+    if (ierr /= 0) call endrun(sub//": FATAL: mpi_bcast: do_clubb_mf_invswitch")
     call mpi_bcast(clubb_mf_pwmin,  1, mpi_real8,   mstrid, mpicom, ierr)
     if (ierr /= 0) call endrun(sub//": FATAL: mpi_bcast: clubb_mf_pwmin")
     call mpi_bcast(clubb_mf_pwmax,  1, mpi_real8,   mstrid, mpicom, ierr)
@@ -213,7 +222,7 @@ module clubb_mf
                                              thl_zm,  qt_zm,     thv_zm,            & ! input
                                              th_zm,   qv_zm,     qc_zm,             & ! input
                            ustar,   ths,     wthl_sfc,wqt_sfc,   pblh,              & ! input
-                           tke,     tpert,   rhinv,                                 & ! input
+                           tke,     tpert,   lts,                                   & ! input
                            wpthlp_env,       wpthvp_env,         wpqtp_env,         & ! input
                            ztopm1,           ddcp,               cbm1,              & ! inout
                            mcape,                                                   & ! output
@@ -305,7 +314,16 @@ module clubb_mf
 
      real(r8), intent(in)                :: wthl_sfc,wqt_sfc
      real(r8), intent(in)                :: pblh,tpert
-     real(r8), intent(in)                :: rhinv
+     ! lower-tropospheric stability thl(700 hPa) - thl(1000 hPa) (K),
+     ! computed in clubb_intr (kept there verbatim for bit-for-bit
+     ! reproducibility of the trigger; see the note at the computation site)
+     real(r8), intent(in)                :: lts
+     ! the rhinv predictor is computed locally from the column inputs
+     ! (previously preprocessed in clubb_intr)
+     real(r8)                            :: rhinv, rhlev
+     real(r8), dimension(nzt)            :: rhprof
+     real(r8)                            :: tmpt_rh, es_rh, qs_rh, tmpmq, tmpmqs
+     integer                             :: k_rh
      real(r8), intent(in)                :: ths,ustar
      real(r8), intent(inout)             :: cbm1
 
@@ -491,6 +509,9 @@ module clubb_mf
                                                ee2,     ud2
      ! aloft trigger flag
      logical                                :: aloft = .false.
+
+     ! strong-inversion (marine-Sc) plume inhibition (do_clubb_mf_invswitch)
+     logical                                :: mf_inhibit
      ! rng seed
      real(r8), dimension(4)                 :: u_seed
      
@@ -759,9 +780,59 @@ module clubb_mf
        wqt  = wqt_sfc
      end if
 
+     ! ------------------------------------------------------------------- !
+     ! local predictors, computed from the column inputs (previously        !
+     ! preprocessed in clubb_intr):                                         !
+     !                                                                      !
+     ! (1) rhinv, consumed by the do_clubb_mf_rhtke entrainment factor and  !
+     !     by get_Lscale under clubb_mf_Lopt 7/8 -- computed only when one  !
+     !     of those consumers is active.  Lopt 7 (and the rhtke factor)     !
+     !     use RH interpolated to 500 hPa; Lopt 8 uses the column-          !
+     !     integrated RH (rho_zt*dzt = dp/g, so the mass weighting matches  !
+     !     the previous state%pdel/g integral exactly).                     !
+     ! (2) the lower-tropospheric stability thl(700 hPa) - thl(1000 hPa)    !
+     !     for the marine-Sc inhibition is computed in clubb_intr and       !
+     !     passed in as lts -- exactly the CLUBB-core expldiff criterion    !
+     !     (advance_clubb_core_module).                                     !
+     ! ------------------------------------------------------------------- !
+     rhinv = 0._r8
+     if (do_clubb_mf_rhtke .or. clubb_mf_Lopt==7 .or. clubb_mf_Lopt==8) then
+       if (clubb_mf_Lopt == 8) then
+         tmpmq  = 0._r8
+         tmpmqs = 0._r8
+         do k_rh = 1, nzt
+           ! T from the full potential temperature (matches the state%t the
+           ! previous clubb_intr preprocessing used)
+           tmpt_rh = th(k_rh)/iexner_zt(k_rh)
+           call qsat(tmpt_rh, p_zt(k_rh), es_rh, qs_rh)
+           tmpmq  = tmpmq  + rho_zt(k_rh)*dzt(k_rh)*qv(k_rh)
+           tmpmqs = tmpmqs + rho_zt(k_rh)*dzt(k_rh)*qs_rh
+         end do
+         rhlev = tmpmq/max(tmpmqs, 1.e-30_r8)
+       else
+         do k_rh = 1, nzt
+           tmpt_rh = th(k_rh)/iexner_zt(k_rh)
+           call qsat(tmpt_rh, p_zt(k_rh), es_rh, qs_rh)
+           rhprof(k_rh) = qv(k_rh)/max(qs_rh, 1.e-30_r8)
+         end do
+         rhlev = mf_pinterp(nzt, p_zt, rhprof, 50000._r8)
+       end if
+       if (rhlev >= 1._r8) rhlev = 0.990_r8
+       if (rhlev > 0._r8) rhinv = 1._r8/((1._r8/rhlev) - 1._r8)
+     end if
+
+     ! marine-Sc inhibition: mirror the CLUBB-core expldiff
+     ! criterion (advance_clubb_core_module: expldiff is applied only where
+     ! thlm700 - thlm1000 < 20 K).  Where the lower-tropospheric inversion is
+     ! at least that strong -- the marine stratocumulus regime -- the MF plume
+     ! ensemble is shut off entirely and CLUBB owns the boundary layer.  All
+     ! plume outputs were zeroed above, so the inhibited column follows the
+     ! same code path as a negatively buoyant (no-convection) one.
+     mf_inhibit = do_clubb_mf_invswitch .and. (lts >= 20._r8)
+
      ! if surface buoyancy is positive then do mass-flux
      !if ( wthv > 0._r8 ) then
-     if ( wthv > 0._r8 .and. wqt > 0._r8) then
+     if ( wthv > 0._r8 .and. wqt > 0._r8 .and. (.not. mf_inhibit) ) then
 
        if (do_clubb_mf_mixd) then
          convh = max(cbm1,pblhmin)
@@ -1951,6 +2022,42 @@ module clubb_mf
      end if
 
   end subroutine integrate_mf
+
+
+  ! clamped linear-in-pressure interpolation of a column field
+  ! to a target pressure level, mirroring the CLUBB-core pvertinterp
+  ! (advance_helper_module): outside the sounding the boundary value is used,
+  ! so the criterion degrades gracefully over high terrain exactly as the
+  ! CLUBB-core expldiff switch does.  Orientation-agnostic (brackets on the
+  ! pressure array itself), so it works for either vertical index convention.
+  function mf_pinterp(nz, p, fld, pout) result(val)
+    integer,  intent(in) :: nz
+    real(r8), intent(in) :: p(nz)     ! level pressures (Pa)
+    real(r8), intent(in) :: fld(nz)   ! field on the same levels
+    real(r8), intent(in) :: pout      ! target pressure (Pa)
+    real(r8)             :: val
+
+    integer  :: k, kbot(1), ktop(1)
+    real(r8) :: wgt
+
+    kbot = maxloc(p)
+    ktop = minloc(p)
+    if (pout >= p(kbot(1))) then
+      val = fld(kbot(1))
+    else if (pout <= p(ktop(1))) then
+      val = fld(ktop(1))
+    else
+      val = fld(kbot(1))
+      do k = 1, nz-1
+        if ((pout - p(k))*(pout - p(k+1)) <= 0._r8 .and. p(k) /= p(k+1)) then
+          wgt = (pout - p(k+1))/(p(k) - p(k+1))
+          val = wgt*fld(k) + (1._r8 - wgt)*fld(k+1)
+          exit
+        end if
+      end do
+    end if
+
+  end function mf_pinterp
 
 
   subroutine get_Lscale(nzt, nzm, zm, tke, wpthlp_env, dzt, iexner_zm, iexner_zt, p_zm, qt, thv, thl, th, &

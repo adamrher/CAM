@@ -3748,6 +3748,7 @@ if ($clubb_sgs  =~ /$TRUE/io) {
        add_default($nl, 'do_clubb_mf_aloft');
        add_default($nl, 'do_clubb_mf_aspd');
        add_default($nl, 'do_clubb_mf_pblcull');
+       add_default($nl, 'do_clubb_mf_invswitch');
    }
 }
 

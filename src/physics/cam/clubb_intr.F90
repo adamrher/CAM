@@ -2273,8 +2273,6 @@ end subroutine clubb_init_cnst
     use time_manager,   only: get_nstep, is_first_restart_step
     use perf_mod,       only: t_startf, t_stopf
 
-    use wv_saturation,   only: qsat
-    use interpolate_data,only: vertinterp
 
 #ifdef CLUBB_SGS
     use holtslag_boville_diff, only: hb_pbl_dependent_coefficients_run
@@ -2893,9 +2891,10 @@ end subroutine clubb_init_cnst
     integer                              :: lengath, tmptop, kcam, icol
     real(r8)                             :: tmpcfl, tmpnet
 
-    real(r8), dimension(state%ncol,pver) :: esat,      rh
-    real(r8), dimension(state%ncol,pver) :: mq,        mqsat
-    real(r8), dimension(state%ncol)      :: rhlev,     rhinv
+    ! liquid-water potential temperature on CAM levels and its 700/1000-hPa
+    ! interpolants for the marine-Sc plume inhibition (do_clubb_mf_invswitch)
+    real(r8), dimension(state%ncol,pver) :: thlcam
+    real(r8), dimension(state%ncol)      :: thl700, thl1000, mf_lts
 
   call t_startf('clubb_tend_cam')
 
@@ -3105,29 +3104,30 @@ end subroutine clubb_init_cnst
     call init_err_info_api(ncol, lchnk, iam, state_loc%lat*rad2deg, state_loc%lon*rad2deg, err_info)
 
 
+    ! the rhinv preprocessing (RH at 500 hPa / column RH) has moved into
+    ! integrate_mf, which computes it locally from its own column inputs
+    ! when do_clubb_mf_rhtke or clubb_mf_Lopt 7/8 need it.
+    !
+    ! lower-tropospheric stability thl700 - thl1000 (K) for the marine-Sc
+    ! plume inhibition in integrate_mf (do_clubb_mf_invswitch).  Mirrors the
+    ! CLUBB-core expldiff criterion (advance_clubb_core_module, pvertinterp
+    ! of thlm to 700 and 1000 hPa), including pvertinterp's boundary clamping.
+    ! NOTE deliberately kept verbatim from the first implementation so runs are
+    ! bit-for-bit reproducible against it: state%exner is SURFACE-referenced
+    ! ((pint(pverp)/pmid)**cappav, dp_coupling), not (p0/pmid)**cappa, so this
+    ! thl is scaled by ~(psfc/p0)**cappa relative to the standard definition
+    ! (~+0.4% over ocean).  The p0-based correction is a known follow-up: swap
+    ! state_loc%exner for (1.e5_r8/state_loc%pmid)**cappa when a deliberate
+    ! answer change is acceptable.
     if (do_clubb_mf) then
-       ! SVP
        do k = 1, pver
-          call qsat(state_loc%t(1:ncol,k), state_loc%pmid(1:ncol,k), esat(1:ncol,k), rh(1:ncol,k), ncol)
+          thlcam(:ncol,k) = ( state_loc%t(:ncol,k) &
+                              - (latvap/cpair)*state_loc%q(:ncol,k,ixcldliq) ) &
+                            * state_loc%exner(:ncol,k)
        end do
-
-       rhlev(:ncol) = 0._r8
-       if (clubb_mf_Lopt==7 .or. clubb_mf_Lopt==6) then
-          ! Interpolate RH to 500 hPa
-          rh(:ncol,:) = state%q(:ncol,:,1)/rh(:ncol,:)
-          call vertinterp(ncol, ncol, pver, state%pmid(:ncol,:), 50000._r8, rh, rhlev, &
-               extrapolate='Z', ln_interp=.true., ps=state%ps(:ncol), phis=state%phis(:ncol), tbot=state%t(:ncol,pver))
-       else if (clubb_mf_Lopt==8) then
-          ! Mass of q, by layer and vertically integrated
-          mq(:ncol,:) = state%q(:ncol,:,1) * state%pdel(:ncol,:) * rga
-          mqsat(:ncol,:) = rh(:ncol,:) * state%pdel(:ncol,:) * rga
-          do k=2,pver
-             mq(:ncol,1) = mq(:ncol,1) + mq(:ncol,k)
-             mqsat(:ncol,1) = mqsat(:ncol,1) + mqsat(:ncol,k)
-          end do
-          rhlev(:ncol) = mq(:ncol,1)/mqsat(:ncol,1)
-       end if
-       !
+       call mf_pinterp(ncol, state_loc%pmid(:ncol,:),  70000._r8, thlcam(:ncol,:), thl700)
+       call mf_pinterp(ncol, state_loc%pmid(:ncol,:), 100000._r8, thlcam(:ncol,:), thl1000)
+       mf_lts(:ncol) = thl700(:ncol) - thl1000(:ncol)
     end if
 
 
@@ -4189,13 +4189,6 @@ end subroutine clubb_init_cnst
         mf_ddcp(1:ncol,:) = ddcp(1:ncol,:)
         mf_cbm1(1:ncol) = cbm1(1:ncol)
 
-        ! inverse rh needed for entrainment rate
-        rhinv(1:ncol) = 0._r8
-        do i = 1, ncol
-          if (rhlev(i) >= 1._r8) rhlev(i) = 0.990_r8
-          if (rhlev(i) > 0._r8) rhinv(i) = 1._r8 / ( (1._r8/rhlev(i)) - 1._r8 )
-        end do
-
         !--------------------------------------- integrate_mf call ---------------------------------------
         ! integrate_mf expects arguments of individual columns.
         ! If the column loop gets pushed into it, we can also avoid the array slicing.
@@ -4210,7 +4203,7 @@ end subroutine clubb_init_cnst
                              thlm_zm(i,:),   rtm_zm(i,:),     thv_ds_zm(i,:),                                        & ! input
                              th_zm(i,:),     qv_zm(i,:),      qc_zm(i,:),                                            & ! input
                              ustar2(i),      th_sfc(i),       wpthlp_sfc(i),   wprtp_sfc(i),    pblh_pbuf(i),        & ! input
-                             tke_zm(i,:),    tpert(i),        rhinv(i),                                              & ! input
+                             tke_zm(i,:),    tpert(i),        mf_lts(i),                                             & ! input
                              wpthlp_pbuf(i,:),                wpthvp_pbuf(i,:),                 wprtp_pbuf(i,:),     & ! input
                              mf_ztopm1(i,:),                  mf_ddcp(i,:),                     mf_cbm1(i),          & ! in-out
                              mf_cape(i,:),                                                                           & ! output
@@ -6339,6 +6332,40 @@ end subroutine clubb_init_cnst
     return
 
   end subroutine clubb_tend_cam
+
+  ! clamped linear-in-pressure interpolation of a midpoint
+  ! field to a target pressure level, mirroring the CLUBB-core pvertinterp
+  ! (advance_helper_module): below the lowest midpoint or above the highest
+  ! midpoint the boundary value is used.  Kept verbatim from the first
+  ! implementation for bit-for-bit reproducibility of the LTS trigger.
+  subroutine mf_pinterp(ncol, pmid, pout, fld, outv)
+    integer,  intent(in)  :: ncol
+    real(r8), intent(in)  :: pmid(:,:)   ! (ncol,pver) midpoint pressure (Pa), increasing downward
+    real(r8), intent(in)  :: pout        ! target pressure (Pa)
+    real(r8), intent(in)  :: fld(:,:)    ! (ncol,pver) field on midpoints
+    real(r8), intent(out) :: outv(ncol)
+
+    integer  :: i, k
+    real(r8) :: dpu, dpl
+
+    do i = 1, ncol
+      if (pout >= pmid(i,pver)) then
+        outv(i) = fld(i,pver)
+      else if (pout <= pmid(i,1)) then
+        outv(i) = fld(i,1)
+      else
+        do k = 1, pver-1
+          if (pout > pmid(i,k) .and. pout <= pmid(i,k+1)) then
+            dpu = pout - pmid(i,k)
+            dpl = pmid(i,k+1) - pout
+            outv(i) = (fld(i,k)*dpl + fld(i,k+1)*dpu) / (dpl + dpu)
+            exit
+          end if
+        end do
+      end if
+    end do
+
+  end subroutine mf_pinterp
 
   subroutine clubb_emissions_cam (state, cam_in, ptend)
 

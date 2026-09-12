@@ -4762,7 +4762,7 @@ Default: 1
 <entry id="do_clubb_mf_rhtke" type="logical" category="conv"
        group="clubb_mf_nl" valid_values="" >
 If .true. use relative humidity thresholds to turn off TKE enhanced entrainment
-Default: .true.
+Default: .false.
 </entry>
 
 <entry id="do_clubb_mf_cmt" type="logical" category="conv"
@@ -4811,6 +4811,14 @@ Default: .false.
        group="clubb_mf_nl" valid_values="" >
 If .true. cull plumes entirely contained within the PBL
 Default: .false.
+</entry>
+
+<entry id="do_clubb_mf_invswitch" type="logical" category="conv"
+       group="clubb_mf_nl" valid_values="" >
+If .true. shut off the MF plume ensemble where the lower-tropospheric stability
+(thl700 - thl1000) is at least 20 K (the marine stratocumulus regime), mirroring
+the CLUBB-core expldiff criterion.
+Default: .true.
 </entry>
 
 <!-- CARMA Sectional Microphysics -->

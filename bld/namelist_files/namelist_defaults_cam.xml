@@ -2377,7 +2377,7 @@
 <do_clubb_mf_mixd                  > .false. </do_clubb_mf_mixd>
 <clubb_mf_up_ndt                   > 1       </clubb_mf_up_ndt>
 <clubb_mf_cp_ndt                   > 1       </clubb_mf_cp_ndt>
-<do_clubb_mf_rhtke                 > .true.  </do_clubb_mf_rhtke>
+<do_clubb_mf_rhtke                 > .false. </do_clubb_mf_rhtke>
 <do_clubb_mf_cmt                   > .false. </do_clubb_mf_cmt>
 <do_clubb_mf_lscale_perplume       > .true.  </do_clubb_mf_lscale_perplume>
 <do_clubb_mf_coldpool_init         > .false. </do_clubb_mf_coldpool_init>
@@ -2386,6 +2386,7 @@
 <do_clubb_mf_aloft                 > .true.  </do_clubb_mf_aloft>
 <do_clubb_mf_aspd                  > .false. </do_clubb_mf_aspd>
 <do_clubb_mf_pblcull               > .false. </do_clubb_mf_pblcull>
+<do_clubb_mf_invswitch             > .true.  </do_clubb_mf_invswitch>
 
 <!-- Set radiation intervals based on mpas hgrids -->
 <iradlw hgrid="mpasa15"  > 10 </iradlw>
